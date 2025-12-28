@@ -20,6 +20,7 @@ import * as recommendationEndpoints from './endpoints/recommendations';
 import * as importEndpoints from './endpoints/imports';
 import * as backupEndpoints from './endpoints/backup';
 import * as setupEndpoints from './endpoints/setup';
+import * as updateEndpoints from './endpoints/updates';
 const routing = {
     v1: {
         // Health checks - system status
@@ -339,6 +340,16 @@ const routing = {
                     download: backupEndpoints.getBackupDownloadEndpoint,
                     delete: backupEndpoints.deleteBackupEndpoint,
                 },
+            },
+            // System update endpoints
+            updates: {
+                current: updateEndpoints.getCurrentVersionEndpoint,
+                available: updateEndpoints.getAvailableVersionsEndpoint,
+                'changelog/:version': updateEndpoints.getVersionChangelogEndpoint,
+                install: updateEndpoints.installUpdateEndpoint,
+                rollback: updateEndpoints.rollbackVersionEndpoint,
+                history: updateEndpoints.getUpdateHistoryEndpoint,
+                status: updateEndpoints.getUpdateStatusEndpoint,
             },
         },
         // Orders - order management

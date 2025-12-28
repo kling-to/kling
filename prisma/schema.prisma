@@ -112,6 +112,13 @@ enum AuditAction {
   email_template_updated
   email_template_deleted
   email_template_duplicated
+  // System update audit actions
+  system_update_started
+  system_update_completed
+  system_update_failed
+  system_rollback_started
+  system_rollback_completed
+  system_rollback_failed
 }
 
 // Flow trigger types

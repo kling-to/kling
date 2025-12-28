@@ -1,19 +1,19 @@
-import rateLimit from "express-rate-limit";
-import RedisStore from "rate-limit-redis";
-import { getRedisClient } from "../utils/cache.js";
-import { logger } from "../utils/logger.js";
-import { metrics } from "../utils/metrics.js";
+import rateLimit from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import { getRedisClient } from '../utils/cache.js';
+import { logger } from '../utils/logger.js';
+import { metrics } from '../utils/metrics.js';
 /**
  * Skip rate limit for admin users or internal services
  */
 function skipRateLimit(req) {
     // Skip for admin users
     const user = req.user;
-    if (user?.role === "admin") {
+    if (user?.role === 'admin') {
         return true;
     }
     // Skip for internal API keys (if configured)
-    const apiKey = req.headers["x-internal-api-key"];
+    const apiKey = req.headers['x-internal-api-key'];
     if (apiKey && process.env.INTERNAL_API_KEY && apiKey === process.env.INTERNAL_API_KEY) {
         return true;
     }
@@ -41,8 +41,8 @@ function createRateLimiter(options) {
         skip: skipRateLimit,
         // Handler for rate limit exceeded
         handler: (req, res) => {
-            logger.warn("Rate limit exceeded", {
-                component: "RateLimiter",
+            logger.warn('Rate limit exceeded', {
+                component: 'RateLimiter',
                 limiter: options.prefix,
                 path: req.path,
                 limit: options.max,
@@ -50,9 +50,9 @@ function createRateLimiter(options) {
             });
             metrics.rateLimitHits.labels({ limiter: options.prefix }).inc();
             res.status(429).json({
-                status: "error",
+                status: 'error',
                 error: {
-                    message: options.message || "Too many requests, please try again later",
+                    message: options.message || 'Too many requests, please try again later',
                 },
             });
         },
@@ -71,9 +71,9 @@ function createRateLimiter(options) {
 export const globalLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100,
-    prefix: "global",
+    prefix: 'global',
     useDefaultKeyGenerator: true,
-    message: "Too many requests from this IP, please try again later",
+    message: 'Too many requests from this IP, please try again later',
 });
 /**
  * Auth rate limiter: 5 login attempts per 15 minutes per IP
@@ -83,10 +83,10 @@ export const globalLimiter = createRateLimiter({
 export const authLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5,
-    prefix: "auth",
+    prefix: 'auth',
     skipSuccessfulRequests: true, // Only count failed login attempts
     useDefaultKeyGenerator: true,
-    message: "Too many login attempts, please try again in 15 minutes",
+    message: 'Too many login attempts, please try again in 15 minutes',
 });
 /**
  * Campaign creation rate limiter: 20 per hour per user
@@ -95,12 +95,12 @@ export const authLimiter = createRateLimiter({
 export const campaignLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 20,
-    prefix: "campaigns",
+    prefix: 'campaigns',
     keyGenerator: (req) => {
         // Use authenticated user ID - this endpoint requires auth
-        return req.user?.sub || "anonymous";
+        return req.user?.sub || 'anonymous';
     },
-    message: "Campaign creation rate limit exceeded (20 per hour)",
+    message: 'Campaign creation rate limit exceeded (20 per hour)',
 });
 /**
  * Natural language parsing rate limiter: 10 per hour per user
@@ -110,12 +110,12 @@ export const campaignLimiter = createRateLimiter({
 export const nlParsingLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
-    prefix: "nl-parsing",
+    prefix: 'nl-parsing',
     keyGenerator: (req) => {
         // Use authenticated user ID - this endpoint requires auth
-        return req.user?.sub || "anonymous";
+        return req.user?.sub || 'anonymous';
     },
-    message: "Natural language parsing rate limit exceeded (10 per hour)",
+    message: 'Natural language parsing rate limit exceeded (10 per hour)',
 });
 /**
  * Event ingestion rate limiter: 1000 events per minute per integration
@@ -125,12 +125,12 @@ export const nlParsingLimiter = createRateLimiter({
 export const eventIngestionLimiter = createRateLimiter({
     windowMs: 60 * 1000, // 1 minute
     max: 1000,
-    prefix: "events",
+    prefix: 'events',
     keyGenerator: (req) => {
         // Use integration ID from auth context or API key
-        return req.integrationId || "anonymous";
+        return req.integrationId || 'anonymous';
     },
-    message: "Event ingestion rate limit exceeded (1000 per minute)",
+    message: 'Event ingestion rate limit exceeded (1000 per minute)',
 });
 /**
  * Webhook rate limiter: 100 per minute per IP
@@ -140,9 +140,9 @@ export const eventIngestionLimiter = createRateLimiter({
 export const webhookLimiter = createRateLimiter({
     windowMs: 60 * 1000, // 1 minute
     max: 100,
-    prefix: "webhook",
+    prefix: 'webhook',
     useDefaultKeyGenerator: true,
-    message: "Webhook rate limit exceeded (100 per minute)",
+    message: 'Webhook rate limit exceeded (100 per minute)',
 });
 /**
  * Admin operations limiter: 30 per hour per user
@@ -152,10 +152,10 @@ export const webhookLimiter = createRateLimiter({
 export const adminLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 30,
-    prefix: "admin",
+    prefix: 'admin',
     keyGenerator: (req) => {
         // Use authenticated user ID - admin endpoints require auth
-        return req.user?.sub || "anonymous";
+        return req.user?.sub || 'anonymous';
     },
-    message: "Admin operation rate limit exceeded (30 per hour)",
+    message: 'Admin operation rate limit exceeded (30 per hour)',
 });

@@ -103,11 +103,19 @@ export async function deleteCachePattern(pattern) {
         const keys = await redis.keys(pattern);
         if (keys.length > 0) {
             await redis.del(...keys);
-            logger.debug('Cache pattern deleted', { component: 'Cache', pattern, keysDeleted: keys.length });
+            logger.debug('Cache pattern deleted', {
+                component: 'Cache',
+                pattern,
+                keysDeleted: keys.length,
+            });
         }
     }
     catch (err) {
-        logger.error('Cache delete pattern error', { component: 'Cache', pattern, error: err.message });
+        logger.error('Cache delete pattern error', {
+            component: 'Cache',
+            pattern,
+            error: err.message,
+        });
     }
 }
 /**

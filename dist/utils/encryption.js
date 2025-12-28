@@ -1,6 +1,6 @@
-import crypto from "crypto";
-import { logger } from "./logger.js";
-const ALGORITHM = "aes-256-gcm";
+import crypto from 'crypto';
+import { logger } from './logger.js';
+const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 16;
 /**
@@ -10,9 +10,9 @@ const IV_LENGTH = 16;
 function getEncryptionKey() {
     const key = process.env.ENCRYPTION_KEY;
     if (!key) {
-        throw new Error("ENCRYPTION_KEY environment variable is required for encryption");
+        throw new Error('ENCRYPTION_KEY environment variable is required for encryption');
     }
-    const keyBuffer = Buffer.from(key, "hex");
+    const keyBuffer = Buffer.from(key, 'hex');
     if (keyBuffer.length !== KEY_LENGTH) {
         throw new Error(`ENCRYPTION_KEY must be ${KEY_LENGTH} bytes (64 hex characters)`);
     }
@@ -22,9 +22,9 @@ function getOldEncryptionKey() {
     const key = process.env.ENCRYPTION_KEY_OLD;
     if (!key)
         return null;
-    const keyBuffer = Buffer.from(key, "hex");
+    const keyBuffer = Buffer.from(key, 'hex');
     if (keyBuffer.length !== KEY_LENGTH) {
-        logger.warn("ENCRYPTION_KEY_OLD is invalid, ignoring");
+        logger.warn('ENCRYPTION_KEY_OLD is invalid, ignoring');
         return null;
     }
     return keyBuffer;
@@ -35,13 +35,13 @@ function getOldEncryptionKey() {
  */
 export function encrypt(plaintext) {
     if (!plaintext)
-        return "";
+        return '';
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv(ALGORITHM, getEncryptionKey(), iv);
-    let encrypted = cipher.update(plaintext, "utf8", "hex");
-    encrypted += cipher.final("hex");
+    let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag();
-    return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted}`;
+    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 /**
  * Decrypt sensitive data
@@ -49,8 +49,8 @@ export function encrypt(plaintext) {
  */
 export function decrypt(encryptedText) {
     if (!encryptedText)
-        return "";
-    const parts = encryptedText.split(":");
+        return '';
+    const parts = encryptedText.split(':');
     if (parts.length !== 3) {
         // Not encrypted, return as-is (for backward compatibility)
         return encryptedText;
@@ -64,26 +64,26 @@ export function decrypt(encryptedText) {
         // Try old key if available (for rotation)
         const oldKey = getOldEncryptionKey();
         if (oldKey) {
-            logger.info("Attempting decryption with old key (key rotation in progress)");
+            logger.info('Attempting decryption with old key (key rotation in progress)');
             return decryptWithKey(oldKey, ivHex, authTagHex, encrypted);
         }
         throw err;
     }
 }
 function decryptWithKey(key, ivHex, authTagHex, encrypted) {
-    const iv = Buffer.from(ivHex, "hex");
-    const authTag = Buffer.from(authTagHex, "hex");
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
-    let decrypted = decipher.update(encrypted, "hex", "utf8");
-    decrypted += decipher.final("utf8");
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
     return decrypted;
 }
 /**
  * Generate new encryption key (for initial setup or rotation)
  */
 export function generateEncryptionKey() {
-    return crypto.randomBytes(KEY_LENGTH).toString("hex");
+    return crypto.randomBytes(KEY_LENGTH).toString('hex');
 }
 /**
  * Check if value is encrypted (has correct format)
@@ -91,7 +91,7 @@ export function generateEncryptionKey() {
 export function isEncrypted(value) {
     if (!value)
         return false;
-    const parts = value.split(":");
+    const parts = value.split(':');
     return parts.length === 3 && parts.every((part) => /^[0-9a-f]+$/i.test(part));
 }
 /**
@@ -99,9 +99,9 @@ export function isEncrypted(value) {
  */
 export function maskSecret(secret) {
     if (!secret || secret.length <= 8) {
-        return "*".repeat(secret?.length || 8);
+        return '*'.repeat(secret?.length || 8);
     }
-    return `${secret.slice(0, 4)}${"*".repeat(secret.length - 8)}${secret.slice(-4)}`;
+    return `${secret.slice(0, 4)}${'*'.repeat(secret.length - 8)}${secret.slice(-4)}`;
 }
 /**
  * Check if encryption is configured

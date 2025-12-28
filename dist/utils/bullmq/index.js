@@ -25,6 +25,8 @@ export { getBrowseAbandonmentQueue, startBrowseAbandonmentWorker, stopBrowseAban
 export { getPredictionQueue, schedulePredictionJob, removePredictionSchedule, triggerPredictionCalculation, startPredictionWorker, stopPredictionWorker, getPredictionJobStatus, initializePredictionWorker, } from './prediction-worker';
 // Database backup utilities
 export { getBackupQueue, startBackupWorker, stopBackupWorker, scheduleBackupJob, removeBackupSchedule, triggerBackupNow, isBackupWorkerRunning, getBackupScheduleInfo, } from './backup-worker';
+// System update utilities
+export { getUpdateQueue, startUpdateWorker, stopUpdateWorker, queueUpdateJob, getActiveUpdateJob, isUpdateWorkerRunning, } from './update-worker';
 /**
  * Initialize BullMQ - call this on application startup
  *
@@ -40,6 +42,7 @@ export async function initializeBullMQ() {
     const { startBrowseAbandonmentWorker, scheduleBrowseAbandonmentJob, removeBrowseAbandonmentSchedule, } = await import('./browse-abandonment-worker');
     const { startPredictionWorker, schedulePredictionJob, removePredictionSchedule } = await import('./prediction-worker');
     const { startBackupWorker, scheduleBackupJob, removeBackupSchedule } = await import('./backup-worker');
+    const { startUpdateWorker } = await import('./update-worker');
     const { getRegisteredSchedules } = await import('./scheduler');
     const prisma = (await import('../prisma')).default;
     // Start workers - they'll pick up any existing schedules from Redis
@@ -96,6 +99,9 @@ export async function initializeBullMQ() {
         await removeBackupSchedule();
         console.log('[BullMQ] Database backup disabled');
     }
+    // Start update worker (always enabled for git-based installations)
+    startUpdateWorker();
+    console.log('[BullMQ] System update worker enabled');
     // Log current state (no sync needed)
     const schedules = await getRegisteredSchedules();
     console.log(`[BullMQ] Initialized: ${schedules.length} campaign schedules active in Redis`);
@@ -113,6 +119,7 @@ export async function shutdownBullMQ() {
     const { stopBrowseAbandonmentWorker } = await import('./browse-abandonment-worker');
     const { stopPredictionWorker } = await import('./prediction-worker');
     const { stopBackupWorker } = await import('./backup-worker');
+    const { stopUpdateWorker } = await import('./update-worker');
     console.log('[BullMQ] Shutting down...');
     // Stop workers first (drain in-progress jobs)
     await stopAllWorkers();
@@ -130,6 +137,8 @@ export async function shutdownBullMQ() {
     await stopPredictionWorker();
     // Stop backup worker
     await stopBackupWorker();
+    // Stop update worker
+    await stopUpdateWorker();
     // Close queue connections
     await closeAllQueues();
     console.log('[BullMQ] Shutdown complete');

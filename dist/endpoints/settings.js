@@ -425,7 +425,9 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
                 }),
                 // Email provider settings (encrypt sensitive fields)
                 ...(input.useMockEmail !== undefined && { useMockEmail: input.useMockEmail }),
-                ...(input.resendApiKey !== undefined && { resendApiKey: encryptIfNeeded(input.resendApiKey) }),
+                ...(input.resendApiKey !== undefined && {
+                    resendApiKey: encryptIfNeeded(input.resendApiKey),
+                }),
                 ...(input.resendFromAddress !== undefined && {
                     resendFromAddress: input.resendFromAddress,
                 }),
@@ -436,7 +438,9 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
                 // SMS provider settings (encrypt sensitive fields)
                 ...(input.useMockSms !== undefined && { useMockSms: input.useMockSms }),
                 ...(input.twilioAccountSid !== undefined && { twilioAccountSid: input.twilioAccountSid }),
-                ...(input.twilioAuthToken !== undefined && { twilioAuthToken: encryptIfNeeded(input.twilioAuthToken) }),
+                ...(input.twilioAuthToken !== undefined && {
+                    twilioAuthToken: encryptIfNeeded(input.twilioAuthToken),
+                }),
                 ...(input.twilioFromNumber !== undefined && { twilioFromNumber: input.twilioFromNumber }),
                 ...(input.twilioMessagingServiceSid !== undefined && {
                     twilioMessagingServiceSid: input.twilioMessagingServiceSid,
@@ -452,10 +456,14 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
                 // Push provider settings (FCM - encrypt sensitive fields)
                 ...(input.useMockPush !== undefined && { useMockPush: input.useMockPush }),
                 ...(input.fcmProjectId !== undefined && { fcmProjectId: input.fcmProjectId }),
-                ...(input.fcmPrivateKey !== undefined && { fcmPrivateKey: encryptIfNeeded(input.fcmPrivateKey) }),
+                ...(input.fcmPrivateKey !== undefined && {
+                    fcmPrivateKey: encryptIfNeeded(input.fcmPrivateKey),
+                }),
                 ...(input.fcmClientEmail !== undefined && { fcmClientEmail: input.fcmClientEmail }),
                 // AI provider settings (encrypt sensitive fields)
-                ...(input.openaiApiKey !== undefined && { openaiApiKey: encryptIfNeeded(input.openaiApiKey) }),
+                ...(input.openaiApiKey !== undefined && {
+                    openaiApiKey: encryptIfNeeded(input.openaiApiKey),
+                }),
                 // Cart abandonment detection settings
                 ...(input.cartAbandonmentEnabled !== undefined && {
                     cartAbandonmentEnabled: input.cartAbandonmentEnabled,

@@ -108,4 +108,14 @@ export const AuditActions = {
     suppression: {
         import: 'suppression_import',
     },
+    systemUpdate: {
+        started: 'system_update_started',
+        completed: 'system_update_completed',
+        failed: 'system_update_failed',
+    },
+    systemRollback: {
+        started: 'system_rollback_started',
+        completed: 'system_rollback_completed',
+        failed: 'system_rollback_failed',
+    },
 };

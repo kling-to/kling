@@ -16,7 +16,7 @@ import path from 'path';
 import os from 'os';
 import * as tar from 'tar';
 import prisma from '../prisma';
-import { uploadBackupToS3, deleteOldBackupsFromS3, isS3Configured, } from '../s3-client';
+import { uploadBackupToS3, deleteOldBackupsFromS3, isS3Configured } from '../s3-client';
 const execAsync = promisify(exec);
 // Queue name
 export const BACKUP_QUEUE_NAME = 'backupQueue';
