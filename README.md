@@ -1,6 +1,6 @@
 # Kling - Self-Hosted Marketing Automation
 
-**Version 1.0.2**
+**Version 1.0.3**
 
 Kling is a self-hosted Klaviyo alternative for e-commerce marketing automation.
 
@@ -9,16 +9,16 @@ Kling is a self-hosted Klaviyo alternative for e-commerce marketing automation.
 ### Docker (Recommended)
 
 ```bash
-docker pull ghcr.io/mukama/kling:1.0.2
-docker run -d -p 3001:3001 ghcr.io/mukama/kling:1.0.2
+docker pull ghcr.io/mukama/kling:1.0.3
+docker run -d -p 3001:3001 ghcr.io/mukama/kling:1.0.3
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://github.com/mukama/kling-releases.git
+git clone https://github.com/kling-to/kling.git
 cd kling-releases
-git checkout v1.0.2
+git checkout v1.0.3
 npm install
 cp .env.example .env
 # Edit .env with your settings
@@ -33,7 +33,7 @@ Updates can be managed through the Admin UI at `/admin/updates` or manually:
 
 ```bash
 git fetch --tags
-git checkout v1.0.2
+git checkout v1.0.3
 npm install
 npm run prisma:generate
 npm run migrate

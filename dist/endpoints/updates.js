@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import createHttpError from 'http-errors';
 // Release repository configuration
-const RELEASE_REPO_RAW = 'https://raw.githubusercontent.com/mukama/kling-releases/main';
+const RELEASE_REPO_RAW = 'https://raw.githubusercontent.com/kling-to/kling/main';
 // Helper to read package.json version
 function getCurrentVersion() {
     try {
