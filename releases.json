@@ -1,6 +1,16 @@
 {
-  "latest": "1.0.9",
+  "latest": "1.0.10",
   "versions": [
+    {
+      "version": "1.0.10",
+      "tag": "v1.0.10",
+      "releaseDate": "2025-12-29T22:39:14.273Z",
+      "changelog": "- refactor: update commit message retrieval to use last release SHA",
+      "breakingChanges": false,
+      "migrations": false,
+      "minVersion": "1.0.0",
+      "sha": "a81051bd720b83ae09f92e3810d9f4c5a6bd72ba"
+    },
     {
       "version": "1.0.9",
       "tag": "v1.0.9",

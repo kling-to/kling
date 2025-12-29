@@ -2,6 +2,10 @@
 
 All notable changes to Kling will be documented in this file.
 
+## [1.0.10] - 2025-12-29
+
+- refactor: update commit message retrieval to use last release SHA
+
 ## [1.0.9] - 2025-12-29
 
 - updates my release script
