@@ -1,6 +1,16 @@
 {
-  "latest": "1.0.8",
+  "latest": "1.0.9",
   "versions": [
+    {
+      "version": "1.0.9",
+      "tag": "v1.0.9",
+      "releaseDate": "2025-12-29T22:01:39.124Z",
+      "changelog": "- updates my release script\n- Updates docs\n- DNS propagation advanced\n- DNS propagation\n- add subdomain verification\n- Cloud ux improvements\n- Automate refunds on provisioning failure\n- Update repo\n- Update post install setup\n- feat: enhance checkout process to prevent duplicate subscriptions and track pending checkouts\n- Fix double billing\n- use .env for packer\n- feat: add updates management page and API integration\n- feat: implement system update worker and related endpoints\n- Releases\n- update claude\n- Password reset flow\n- Update signup mode default to 'disabled' in settings and adjust related comments\n- setup flow\n- Fix deloyments",
+      "breakingChanges": false,
+      "migrations": false,
+      "minVersion": "1.0.0",
+      "sha": "6a158f3b0cb88b4cffa7658afa19170ce60caf9d"
+    },
     {
       "version": "1.0.8",
       "tag": "v1.0.8",
