@@ -2,6 +2,10 @@
 
 All notable changes to Kling will be documented in this file.
 
+## [1.0.8] - 2025-12-29
+
+Release update
+
 ## [1.0.7] - 2025-12-29
 
 Release update

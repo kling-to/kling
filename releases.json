@@ -1,6 +1,16 @@
 {
-  "latest": "1.0.7",
+  "latest": "1.0.8",
   "versions": [
+    {
+      "version": "1.0.8",
+      "tag": "v1.0.8",
+      "releaseDate": "2025-12-29T21:53:03.783Z",
+      "changelog": "Release update",
+      "breakingChanges": false,
+      "migrations": false,
+      "minVersion": "1.0.0",
+      "sha": "82e2d3ad01971b103a638454a4e0c608c091a5f6"
+    },
     {
       "version": "1.0.7",
       "tag": "v1.0.7",

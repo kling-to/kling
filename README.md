@@ -1,6 +1,6 @@
 # Kling - Self-Hosted Marketing Automation
 
-**Version 1.0.7** | [kling.to](https://kling.to)
+**Version 1.0.8** | [kling.to](https://kling.to)
 
 ## About
 
@@ -20,7 +20,7 @@
 ```bash
 git clone https://github.com/kling-to/kling.git
 cd kling-releases
-git checkout v1.0.7
+git checkout v1.0.8
 npm install
 cp .env.example .env
 # Edit .env with your settings
@@ -35,7 +35,7 @@ Updates can be managed through the Admin UI at `/admin/updates` or manually:
 
 ```bash
 git fetch --tags
-git checkout v1.0.7
+git checkout v1.0.8
 npm install
 npm run prisma:generate
 npm run migrate
