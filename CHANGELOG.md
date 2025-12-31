@@ -2,6 +2,35 @@
 
 All notable changes to Kling will be documented in this file.
 
+## [1.0.11] - 2025-12-31
+
+- CLeanup
+- Updates copy
+- Update license
+- Copy update
+- Landing page cleanup
+- Remove old site
+- Links
+- Logo update
+- License
+- Clean up
+- updates copy
+- Updates links
+- updates
+- Site
+- remove verbose agents
+- Cloud page
+- refactor: update footer, header, and pricing comparator components for improved structure and content
+- Update copy
+- Add layout and page components for frontpage; update package name to @kling/site
+- Site
+- shadcn
+- init site
+- Update cloud page
+- Improves website
+- Website
+- claude flow setup
+
 ## [1.0.10] - 2025-12-29
 
 - refactor: update commit message retrieval to use last release SHA

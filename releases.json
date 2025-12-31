@@ -1,6 +1,16 @@
 {
-  "latest": "1.0.10",
+  "latest": "1.0.11",
   "versions": [
+    {
+      "version": "1.0.11",
+      "tag": "v1.0.11",
+      "releaseDate": "2025-12-31T15:11:45.778Z",
+      "changelog": "- CLeanup\n- Updates copy\n- Update license\n- Copy update\n- Landing page cleanup\n- Remove old site\n- Links\n- Logo update\n- License\n- Clean up\n- updates copy\n- Updates links\n- updates\n- Site\n- remove verbose agents\n- Cloud page\n- refactor: update footer, header, and pricing comparator components for improved structure and content\n- Update copy\n- Add layout and page components for frontpage; update package name to @kling/site\n- Site\n- shadcn\n- init site\n- Update cloud page\n- Improves website\n- Website\n- claude flow setup",
+      "breakingChanges": false,
+      "migrations": false,
+      "minVersion": "1.0.0",
+      "sha": "3dfa2464020ad0657961cb8e38450f9e1cbd4168"
+    },
     {
       "version": "1.0.10",
       "tag": "v1.0.10",
