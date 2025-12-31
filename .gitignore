@@ -19,6 +19,3 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-
-# Temp files
-.release-notes.md
