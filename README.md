@@ -1,46 +1,55 @@
 # Kling - Self-Hosted Marketing Automation
 
-**Version 1.0.12** | [kling.to](https://kling.to)
+**Version 1.0.13** | [kling.to](https://kling.to)
 
 ## About
 
 [Kling](https://kling.to) is a self-hosted Klaviyo alternative that cuts e-commerce marketing costs by 70-90%. Create automated email and SMS campaigns using natural language prompts, segment customers with 30+ behavioral filters, and keep full control of your data.
 
-**Key Features:**
-- Natural language campaign creation ("Send an email to customers who haven't purchased in 30 days")
-- Visual automation flow builder for abandoned cart, welcome series, post-purchase sequences
-- Smart customer segmentation (churn risk, lifetime value, purchase history)
-- Multi-channel delivery (email + SMS) with automatic fallback
-- E-commerce integrations (Shopify, WooCommerce, BigCommerce, Wix, Magento, Square)
-- GDPR-compliant data export and deletion
-- Klaviyo migration tools
+## Quick Start (Docker)
 
-## Installation
+```bash
+docker run -d \
+  --name kling \
+  -p 3001:3001 \
+  -v kling-data:/data \
+  -e JWT_SECRET="$(openssl rand -base64 32)" \
+  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+  --restart unless-stopped \
+  ghcr.io/kling-to/kling:latest
+```
+
+Open `http://your-server-ip:3001` and create your admin account.
+
+## Manual Installation
 
 ```bash
 git clone https://github.com/kling-to/kling.git
-cd kling-releases
-git checkout v1.0.12
-npm install
+cd kling
+git checkout v1.0.13
+npm install --omit=dev
 cp .env.example .env
 # Edit .env with your settings
-npm run prisma:generate
-npm run migrate
-npm start
+npx prisma generate
+npx prisma migrate deploy
+node --import tsx dist/index.js
 ```
+
+See [INSTALLATION.md](./INSTALLATION.md) for detailed setup instructions.
 
 ## Updating
 
-Updates can be managed through the Admin UI at `/admin/updates` or manually:
-
 ```bash
 git fetch --tags
-git checkout v1.0.12
-npm install
-npm run prisma:generate
-npm run migrate
-npm start
+git checkout v1.0.13
+npm install --omit=dev
+npx prisma generate
+npx prisma migrate deploy
 ```
+
+## One-Click Install
+
+Prefer managed hosting? [kling.to/installations/new](https://kling.to/installations/new)
 
 ## Support
 

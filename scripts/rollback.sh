@@ -22,6 +22,9 @@ npm install --omit=dev
 echo "Generating Prisma client..."
 npx prisma generate
 
-echo "Rollback complete! Please restart the server."
+echo ""
+echo "Rollback complete!"
+echo "Restart with: sudo systemctl restart kling"
+echo ""
 echo "Note: Database migrations are NOT rolled back automatically."
 echo "Restore from backup if needed."

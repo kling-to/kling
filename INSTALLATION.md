@@ -1,373 +1,405 @@
 # Kling Installation Guide
 
-A step-by-step guide to install Kling on your own server. No advanced technical knowledge required.
+A step-by-step guide to install Kling on your own server.
 
 ## What You'll Need
 
 Before starting, make sure you have:
 
-- [ ] A server running **Ubuntu 22.04** (recommended) or similar Linux
-- [ ] A domain name (e.g., `marketing.yourcompany.com`)
-- [ ] SSH access to your server
-- [ ] About 30-45 minutes
+- A server running **Ubuntu 22.04** (recommended) or similar Linux
+- A domain name (e.g., `marketing.yourcompany.com`)
+- SSH access to your server
+- About 15-30 minutes
 
 **Server Requirements**:
+
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
-| RAM | 2 GB | 4 GB |
-| CPU | 2 cores | 4 cores |
-| Disk | 20 GB | 50 GB SSD |
+| RAM      | 2 GB    | 4 GB        |
+| CPU      | 2 cores | 4 cores     |
+| Disk     | 20 GB   | 50 GB SSD   |
 
 ---
 
-## Step 1: Connect to Your Server
+## Option A: Docker (Recommended)
 
-Open a terminal on your computer and connect to your server:
+The simplest way to run Kling. Everything runs in a single container.
 
-```bash
-ssh your-username@your-server-ip
-```
-
-Replace `your-username` with your server username and `your-server-ip` with your server's IP address.
-
----
-
-## Step 2: Update Your Server
-
-Run these commands to ensure your server is up to date:
-
-```bash
-sudo apt update
-sudo apt upgrade -y
-```
-
-This may take a few minutes. Type `Y` and press Enter if prompted.
-
----
-
-## Step 3: Install Docker
-
-Docker is the software that runs Kling. Install it with this command:
+### Step 1: Install Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
-```
-
-Then add yourself to the Docker group (so you don't need `sudo` every time):
-
-```bash
 sudo usermod -aG docker $USER
 ```
 
-**Important**: Log out and log back in for this to take effect:
+Log out and back in for the group change to take effect.
+
+### Step 2: Run Kling
 
 ```bash
-exit
+docker run -d \
+  --name kling \
+  -p 3001:3001 \
+  -v kling-data:/data \
+  -e JWT_SECRET="$(openssl rand -base64 32)" \
+  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+  --restart unless-stopped \
+  ghcr.io/kling-to/kling:latest
 ```
 
-Then reconnect:
+That's it! Kling is now running at `http://your-server-ip:3001`.
+
+### Step 3: Set Up a Reverse Proxy (Optional)
+
+For HTTPS and a custom domain, install Nginx and Certbot:
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx -y
+```
+
+Create `/etc/nginx/sites-available/kling`:
+
+```nginx
+server {
+    listen 80;
+    server_name marketing.yourcompany.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+Enable and get SSL:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/kling /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d marketing.yourcompany.com
+```
+
+---
+
+## Option B: Manual Installation
+
+For more control over individual components.
+
+### Step 1: Connect to Your Server
 
 ```bash
 ssh your-username@your-server-ip
 ```
 
-Verify Docker is working:
+### Step 2: Install Dependencies
 
 ```bash
-docker --version
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install MongoDB 7
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+  sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] http://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+  sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt update && sudo apt install -y mongodb-org
+
+# Install Redis
+sudo apt install -y redis-server
+
+# Start services
+sudo systemctl enable --now mongod redis-server
 ```
 
-You should see something like `Docker version 24.x.x`.
-
----
-
-## Step 4: Download Kling
-
-Download Kling to your server:
+### Step 3: Download Kling
 
 ```bash
-git clone https://github.com/your-org/kling.git
+cd /opt
+sudo git clone https://github.com/kling-to/kling.git
+sudo chown -R $USER:$USER kling
 cd kling
 ```
 
----
-
-## Step 5: Configure Kling
-
-### 5.1 Create Your Configuration File
-
-Copy the example configuration:
+Checkout the latest release:
 
 ```bash
-cp .env.prod.example .env.prod
+git fetch --tags
+git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
 ```
 
-### 5.2 Generate Secure Passwords
-
-Run these commands to generate secure passwords. **Save these somewhere safe** - you'll need them:
+### Step 4: Install Dependencies
 
 ```bash
-echo "Your JWT Secret:"
-openssl rand -base64 32
-
-echo "Your Encryption Key:"
-openssl rand -hex 32
-
-echo "Your MongoDB Password:"
-openssl rand -base64 24
-
-echo "Your Redis Password:"
-openssl rand -base64 24
+npm install --omit=dev
+npx prisma generate
 ```
 
-### 5.3 Edit the Configuration
-
-Open the configuration file:
+### Step 5: Configure Environment
 
 ```bash
-nano .env.prod
+cp .env.example .env
 ```
 
-Update these values with your information:
+Edit `.env` with your settings:
 
 ```bash
-# Your domain (change this!)
-BASE_URL=https://marketing.yourcompany.com
-
-# Paste the passwords you generated above
-JWT_SECRET=paste-your-jwt-secret-here
-ENCRYPTION_KEY=paste-your-encryption-key-here
-MONGO_ROOT_PASSWORD=paste-your-mongodb-password-here
-REDIS_PASSWORD=paste-your-redis-password-here
+nano .env
 ```
 
-**To save the file**: Press `Ctrl+X`, then `Y`, then `Enter`.
-
----
-
-## Step 6: Set Up SSL Certificate
-
-SSL makes your connection secure (the padlock icon in browsers).
-
-### 6.1 Install Certbot
+Required variables:
 
 ```bash
-sudo apt install certbot -y
+# Database (local MongoDB)
+DATABASE_URL="mongodb://127.0.0.1:27017/kling"
+
+# Security - generate these!
+JWT_SECRET="$(openssl rand -base64 32)"
+ENCRYPTION_KEY="$(openssl rand -hex 32)"
+
+# Server
+PORT=3001
+NODE_ENV=production
+
+# Redis
+REDIS_URL="redis://127.0.0.1:6379"
 ```
 
-### 6.2 Get Your Certificate
-
-Replace `marketing.yourcompany.com` with your actual domain and `you@example.com` with your email:
+Generate secure values:
 
 ```bash
-sudo certbot certonly --standalone \
-  -d marketing.yourcompany.com \
-  --agree-tos \
-  --email you@example.com \
-  --non-interactive
+echo "JWT_SECRET: $(openssl rand -base64 32)"
+echo "ENCRYPTION_KEY: $(openssl rand -hex 32)"
 ```
 
-### 6.3 Copy Certificate to Kling
+### Step 6: Run Database Migrations
 
 ```bash
-mkdir -p nginx/ssl
-sudo cp /etc/letsencrypt/live/marketing.yourcompany.com/fullchain.pem nginx/ssl/
-sudo cp /etc/letsencrypt/live/marketing.yourcompany.com/privkey.pem nginx/ssl/
-sudo chown $USER:$USER nginx/ssl/*.pem
+npx prisma migrate deploy
 ```
 
-Replace `marketing.yourcompany.com` with your domain.
-
----
-
-## Step 7: Update Domain in Nginx
-
-Open the Nginx configuration:
+### Step 7: Create Systemd Service
 
 ```bash
-nano nginx/nginx.conf
+sudo tee /etc/systemd/system/kling.service << 'EOF'
+[Unit]
+Description=Kling Marketing Automation
+After=network.target mongod.service redis-server.service
+Requires=mongod.service redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/kling
+ExecStart=/usr/bin/node --import tsx dist/index.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
 ```
 
-Find this line (use `Ctrl+W` to search):
-
-```
-server_name _;
-```
-
-Change it to your domain:
-
-```
-server_name marketing.yourcompany.com;
-```
-
-**Save**: Press `Ctrl+X`, then `Y`, then `Enter`.
-
----
-
-## Step 8: Open Firewall Ports
-
-Allow web traffic through your firewall:
+Enable and start:
 
 ```bash
-sudo ufw allow 22/tcp   # SSH (so you don't lock yourself out!)
-sudo ufw allow 80/tcp   # HTTP
-sudo ufw allow 443/tcp  # HTTPS
-sudo ufw enable
+sudo chown -R www-data:www-data /opt/kling
+sudo systemctl daemon-reload
+sudo systemctl enable --now kling
 ```
 
-Type `y` when prompted.
-
----
-
-## Step 9: Start Kling
-
-Now for the exciting part! Start Kling:
+### Step 8: Set Up Nginx
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+sudo apt install nginx certbot python3-certbot-nginx -y
 ```
 
-This will download and start all the components. It may take 5-10 minutes the first time.
+Create `/etc/nginx/sites-available/kling`:
 
-### 9.1 Initialize the Database
+```nginx
+server {
+    listen 80;
+    server_name marketing.yourcompany.com;
 
-Wait about 30 seconds, then run:
+    # API endpoints
+    location /v1 {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Frontend
+    location / {
+        root /opt/kling/public;
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+Enable and get SSL:
 
 ```bash
-docker exec kling-mongodb mongosh --eval "rs.initiate()"
+sudo ln -s /etc/nginx/sites-available/kling /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d marketing.yourcompany.com
 ```
 
-You should see `{ ok: 1 }`.
-
-### 9.2 Check Everything is Running
+### Step 9: Open Firewall
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 ```
-
-You should see all services with status `Up` or `healthy`.
 
 ---
 
-## Step 10: Create Your Admin Account
+## First Login
 
-1. Open your browser and go to `https://marketing.yourcompany.com`
-2. Click **Register**
-3. Enter your email and a strong password
-4. The first user automatically becomes the admin!
+1. Open your browser to `https://marketing.yourcompany.com`
+2. Click **Register** to create your admin account
+3. The first user automatically becomes the administrator
 
 ---
 
-## You're Done!
+## Post-Installation Setup
 
-Kling is now running. Here's what to do next:
-
-1. **Configure Email Provider**: Go to Settings → Providers → Add your Resend API key
+1. **Configure Email Provider**: Settings > Providers > Add your Resend/SendGrid API key
 2. **Configure SMS Provider** (optional): Add Twilio credentials
-3. **Import Customers**: Go to Customers → Import
-4. **Create Your First Campaign**: Go to Campaigns → New Campaign
+3. **Import Customers**: Customers > Import
+4. **Create Your First Campaign**: Campaigns > New Campaign
 
 ---
 
-## Common Issues
+## Updating Kling
 
-### "Cannot connect to the Docker daemon"
-
-Docker isn't running. Start it:
+### Docker
 
 ```bash
-sudo systemctl start docker
+docker pull ghcr.io/kling-to/kling:latest
+docker stop kling && docker rm kling
+docker run -d \
+  --name kling \
+  -p 3001:3001 \
+  -v kling-data:/data \
+  -e JWT_SECRET="your-existing-secret" \
+  -e ENCRYPTION_KEY="your-existing-key" \
+  --restart unless-stopped \
+  ghcr.io/kling-to/kling:latest
 ```
 
-### "Port 80 already in use"
-
-Another service is using port 80. Stop it:
+### Manual Installation
 
 ```bash
-sudo systemctl stop nginx
-sudo systemctl stop apache2
-```
-
-### "Connection refused" when visiting your domain
-
-1. Check your domain's DNS points to your server's IP
-2. Wait 5-10 minutes for DNS to update
-3. Make sure the firewall allows ports 80 and 443
-
-### Services keep restarting
-
-Check the logs for errors:
-
-```bash
-docker compose -f docker-compose.prod.yml logs backend
-```
-
-### Forgot your admin password?
-
-Connect to the database and reset it:
-
-```bash
-docker exec -it kling-mongodb mongosh kling --eval "
-  db.User.updateOne(
-    { email: 'your@email.com' },
-    { \$set: { password: '\$2b\$10\$...' } }
-  )
-"
-```
-
-Contact support for password reset assistance.
-
----
-
-## Keeping Kling Updated
-
-When a new version is released:
-
-```bash
-cd kling
-git pull
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml build --no-cache
-docker compose -f docker-compose.prod.yml up -d
+cd /opt/kling
+git fetch --tags
+git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
+npm install --omit=dev
+npx prisma generate
+npx prisma migrate deploy
+sudo systemctl restart kling
 ```
 
 ---
 
 ## Backing Up Your Data
 
-Set up automatic daily backups:
+### Docker
 
 ```bash
-# Make the backup script executable
-chmod +x scripts/backup.sh
-
-# Add to cron (runs at 2 AM daily)
-(crontab -l 2>/dev/null; echo "0 2 * * * cd $(pwd) && ./scripts/backup.sh") | crontab -
+# Backup data volume
+docker run --rm -v kling-data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/kling-backup-$(date +%Y%m%d).tar.gz /data
 ```
 
-Backups are saved in the `./backups` folder.
+### Manual Installation
+
+```bash
+# Backup MongoDB
+mongodump --out=/backup/kling-$(date +%Y%m%d)
+
+# Backup uploads and config
+tar czf /backup/kling-files-$(date +%Y%m%d).tar.gz /opt/kling/.env /opt/kling/uploads
+```
 
 ---
 
-## Getting Help
+## Troubleshooting
 
-- **Documentation**: Check other files in the `docs/` folder
-- **Issues**: Report problems at https://github.com/your-org/kling/issues
-- **Community**: Join our Discord at https://discord.gg/kling
+### Container won't start
+
+Check logs:
+
+```bash
+docker logs kling
+```
+
+### "Connection refused" errors
+
+Ensure services are running:
+
+```bash
+# Docker
+docker ps
+
+# Manual
+sudo systemctl status mongod redis-server kling
+```
+
+### Database connection issues
+
+Verify MongoDB is accessible:
+
+```bash
+mongosh --eval "db.adminCommand('ping')"
+```
+
+### Port already in use
+
+Check what's using port 3001:
+
+```bash
+sudo lsof -i :3001
+```
 
 ---
 
 ## Quick Reference
 
-| What | Command |
-|------|---------|
-| Start Kling | `docker compose -f docker-compose.prod.yml up -d` |
-| Stop Kling | `docker compose -f docker-compose.prod.yml down` |
-| View logs | `docker compose -f docker-compose.prod.yml logs -f` |
-| Check status | `docker compose -f docker-compose.prod.yml ps` |
-| Restart | `docker compose -f docker-compose.prod.yml restart` |
-| Backup | `./scripts/backup.sh` |
+| Action | Docker | Manual |
+|--------|--------|--------|
+| Start | `docker start kling` | `sudo systemctl start kling` |
+| Stop | `docker stop kling` | `sudo systemctl stop kling` |
+| Restart | `docker restart kling` | `sudo systemctl restart kling` |
+| View logs | `docker logs -f kling` | `sudo journalctl -u kling -f` |
+| Check status | `docker ps` | `sudo systemctl status kling` |
 
 ---
 
-*Last updated: December 2024*
+## Getting Help
+
+- **Website**: [kling.to](https://kling.to)
+- **Documentation**: [kling.to/docs](https://kling.to/docs)
+- **Issues**: [github.com/kling-to/kling/issues](https://github.com/kling-to/kling/issues)
+
+---
+
+## One-Click Install
+
+Prefer managed hosting? Get started instantly at [kling.to/installations/new](https://kling.to/installations/new)

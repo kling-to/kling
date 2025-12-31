@@ -28,4 +28,6 @@ npx prisma generate
 echo "Running database migrations..."
 npx prisma migrate deploy
 
-echo "Update complete! Please restart the server."
+echo ""
+echo "Update complete!"
+echo "Restart with: sudo systemctl restart kling"
