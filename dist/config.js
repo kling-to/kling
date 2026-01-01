@@ -5,10 +5,14 @@ import helmet from 'helmet';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import routing from './routing';
 import { correlationIdMiddleware } from './middlewares/correlation-id.js';
 import { globalLimiter, authLimiter, campaignLimiter, nlParsingLimiter, eventIngestionLimiter, webhookLimiter, adminLimiter, } from './middlewares/rate-limit.js';
 import { logger } from './utils/logger.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+const { version } = packageJson;
 const commonConfig = {
     http: {
         listen: Number(process.env.PORT) || 3001,
@@ -62,14 +66,13 @@ const config = createConfig({
             content: new Documentation({
                 config: commonConfig,
                 routing,
-                title: 'Kling API Documentation',
-                version: '1.0.0',
+                title: 'Kling API - Self-hosted Marketing Automation for E-commerce',
+                version,
                 serverUrl: 'http://localhost:3001',
                 hasHeadMethod: false,
             }).getSpecAsJson(),
         }));
         // Serve frontend static files in production
-        const __dirname = path.dirname(fileURLToPath(import.meta.url));
         const publicPath = path.join(__dirname, '..', 'public');
         // Serve static files
         app.use(express.static(publicPath));
