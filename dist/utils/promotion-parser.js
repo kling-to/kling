@@ -1,12 +1,18 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
+import prisma from './prisma';
 let openai = null;
-function getOpenAIClient() {
-    if (!openai && process.env.OPENAI_API_KEY) {
-        openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+let cachedApiKey = null;
+async function getOpenAIClient() {
+    const settings = await prisma.settings.findFirst();
+    const apiKey = settings?.openaiApiKey;
+    if (!apiKey) {
+        return null;
+    }
+    if (!openai || cachedApiKey !== apiKey) {
+        openai = new OpenAI({ apiKey });
+        cachedApiKey = apiKey;
     }
     return openai;
 }
@@ -165,11 +171,11 @@ REJECTION CRITERIA:
 
 Only output valid JSON, no explanations.`;
 export async function parseNaturalLanguageToPromotionDSL(prompt, timezone = 'UTC') {
-    const client = getOpenAIClient();
+    const client = await getOpenAIClient();
     if (!client) {
         return {
             success: false,
-            error: 'OpenAI API key not configured (OPENAI_API_KEY)',
+            error: 'OpenAI API key not configured in settings',
         };
     }
     try {
