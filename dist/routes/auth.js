@@ -1,0 +1,10 @@
+import express from 'express';
+import { asyncHandler } from '../utils/asyncHandler';
+import * as authCtrl from '../controllers/authController';
+const router = express.Router();
+router.post('/register', asyncHandler(authCtrl.register));
+router.post('/login', asyncHandler(authCtrl.login));
+router.post('/refresh', asyncHandler(authCtrl.refresh));
+router.post('/logout', asyncHandler((req, res) => res.status(204).send()));
+router.get('/me', asyncHandler(authCtrl.me));
+export default router;

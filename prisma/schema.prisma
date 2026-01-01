@@ -1,0 +1,1667 @@
+// ------------------------------------------------------
+// Prisma MongoDB Schema
+// ------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------
+
+// User roles
+// ADMIN: Full system control (settings, users, everything)
+// MANAGER: Manage campaigns, customers, templates
+// STAFF: Read-only access
+enum UserRole {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum MessageChannel {
+  email
+  sms
+  whatsapp
+  rcs
+  push
+}
+
+enum CampaignStatus {
+  active
+  paused
+  disabled
+  archived
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum AuditAction {
+  user_registered
+  user_login
+  user_logout
+  settings_updated
+  member_invited
+  member_joined
+  member_removed
+  member_role_changed
+  campaign_created
+  campaign_updated
+  campaign_paused
+  campaign_resumed
+  campaign_archived
+  campaign_deleted
+  message_sent
+  message_failed
+  message_retried
+  customer_created
+  customer_updated
+  customer_opted_out
+  customer_deleted
+  consent_granted
+  consent_revoked
+  data_export_requested
+  data_deletion_requested
+  order_created
+  order_status_changed
+  order_deleted
+  integration_connected
+  integration_disconnected
+  integration_sync_started
+  integration_sync_completed
+  integration_sync_failed
+  // Flow-related audit actions
+  flow_created
+  flow_updated
+  flow_paused
+  flow_resumed
+  flow_archived
+  flow_deleted
+  flow_enrollment_created
+  flow_step_executed
+  flow_enrollment_completed
+  flow_enrollment_exited
+  // Form-related audit actions
+  form_created
+  form_updated
+  form_paused
+  form_activated
+  form_archived
+  form_deleted
+  form_submission_received
+  // Experiment-related audit actions
+  experiment_created
+  experiment_started
+  experiment_stopped
+  experiment_deleted
+  // Suppression list import
+  suppression_import
+  // Email Template audit actions
+  email_template_created
+  email_template_updated
+  email_template_deleted
+  email_template_duplicated
+  // System update audit actions
+  system_update_started
+  system_update_completed
+  system_update_failed
+  system_rollback_started
+  system_rollback_completed
+  system_rollback_failed
+}
+
+// Flow trigger types
+enum FlowTriggerType {
+  customer_joined_list      // Welcome series
+  abandoned_cart            // Cart recovery
+  browse_abandonment        // Browse abandonment recovery (viewed but didn't add to cart)
+  order_placed              // Post-purchase
+  order_fulfilled           // Fulfillment complete
+  subscription_started      // Subscription initiated
+  subscription_cancelled    // Subscription ended
+  custom_event              // Custom event trigger
+  form_submitted            // Form submission trigger
+}
+
+// Flow enrollment status
+enum FlowEnrollmentStatus {
+  active        // Currently progressing through flow
+  completed     // Reached exit node
+  exited        // Manually exited or triggered exit action
+  failed        // Encountered error
+  paused        // Manually paused
+}
+
+// E-commerce platform integration types
+enum IntegrationPlatform {
+  SHOPIFY
+  WOOCOMMERCE
+  BIGCOMMERCE
+  WIX
+  SALESFORCE
+  MAGENTO
+  SQUARE
+  CUSTOM
+}
+
+enum IntegrationSyncStatus {
+  PENDING
+  SYNCING
+  SYNCED
+  FAILED
+}
+
+enum ConsentType {
+  email_marketing
+  sms_marketing
+  whatsapp_marketing
+  push_marketing
+  data_processing
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  delivered
+  bounced
+  failed
+  opened
+  clicked
+  unsubscribed
+  complained
+}
+
+enum OrderStatus {
+  pending
+  completed
+  refunded
+  partial_refund
+  cancelled
+}
+
+enum BackupStatus {
+  pending
+  in_progress
+  completed
+  failed
+}
+
+enum BackupType {
+  scheduled
+  manual
+}
+
+// ------------------------------------------------------
+// EMBEDDED MESSAGE CONTENT TYPES
+// ------------------------------------------------------
+
+// Embedded type for email content
+type EmailContent {
+  subject   String   // Subject line with placeholders
+  preheader String?  // Preview text shown in inbox
+  body      String   // Plain text version (required)
+  html      String?  // Rich HTML version (optional)
+  signature String?  // Optional sign-off text
+  // Product recommendations
+  includeRecommendations     Boolean?                   // Include product recommendations in email
+  recommendationAlgorithm    RecommendationAlgorithm?   // Algorithm to use for recommendations
+  recommendationLimit        Int?                       // Max recommendations to include (1-12)
+  excludePurchasedProducts   Boolean?                   // Exclude products customer already purchased
+}
+
+// Embedded type for SMS content
+type SmsContent {
+  body String // Short message body (~160 chars recommended)
+}
+
+// Embedded type for WhatsApp content
+type WhatsAppContent {
+  body       String   // Message body (max 4096 chars)
+  mediaUrl   String?  // Optional media URL (image, video, document)
+  mediaType  String?  // "image" | "video" | "document" | "audio"
+  templateId String?  // WhatsApp approved template ID (required for first contact)
+}
+
+// Embedded type for RCS content
+type RcsContent {
+  body           String   // Message body
+  title          String?  // Optional rich card title
+  imageUrl       String?  // Optional image URL
+  suggestions    String[] // Quick reply suggestions
+  fallbackToSms  Boolean  // Whether to fallback to SMS if RCS unavailable
+}
+
+// Embedded type for Push notification content
+type PushContent {
+  title    String   // Notification title
+  body     String   // Notification body
+  imageUrl String?  // Optional image URL
+  deepLink String?  // Deep link URL for app navigation
+  data     Json?    // Custom data payload
+}
+
+// ------------------------------------------------------
+// EMBEDDED PROMOTION TYPES (For Campaigns)
+// ------------------------------------------------------
+
+// Embedded discount configuration for campaigns
+type CampaignDiscount {
+  type               String    // percentage | fixed_amount | free_shipping
+  value              Float     // <1 for %, >=1 for fixed
+  code               String?   // auto-generated or custom promo code
+  maxUsesTotal       Int?      // Global cap on total redemptions
+  maxUsesPerCustomer Int?      // Per-customer limit (default: 1)
+  minOrderValue      Float?    // Minimum order value to qualify
+  stackable          Boolean?  // Can be combined with other discounts
+}
+
+// Embedded gift configuration for campaigns
+type CampaignGift {
+  type                   String    // free_sku | free_sample | redemption_code
+  sku                    String?   // SKU of free product (for free_sku type)
+  value                  String?   // Description or monetary value
+  code                   String?   // auto-generated or custom redemption code
+  maxQuantityTotal       Int?      // Total inventory of gifts available
+  maxQuantityPerCustomer Int?      // Per-customer limit (default: 1)
+}
+
+// ------------------------------------------------------
+// USERS & AUTH
+// ------------------------------------------------------
+
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  email        String   @unique
+  passwordHash String?
+  name         String?
+  role         UserRole @default(STAFF) // User's role in the system
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaigns      CampaignDefinition[] @relation("CreatedByUser")
+  flows          Flow[]               @relation("FlowCreatedByUser")
+  forms          Form[]               @relation("FormCreatedByUser")
+  emailTemplates EmailTemplate[]      @relation("EmailTemplateCreatedByUser")
+  messageLogs    MessageLog[]
+  userProviders  UserProvider[]
+  auditLogs      AuditLog[]
+}
+
+// ------------------------------------------------------
+// EMAIL TEMPLATES (Reusable Email Content)
+// ------------------------------------------------------
+
+// Category for organizing email templates
+enum EmailTemplateCategory {
+  transactional    // Order confirmations, receipts, shipping
+  promotional      // Sales, discounts, new products
+  lifecycle        // Welcome, win-back, birthday
+  engagement       // Reviews, surveys, feedback
+  notification     // Alerts, reminders, updates
+  newsletter       // Regular content updates
+  custom           // User-created templates
+}
+
+// Reusable email template that can be used across campaigns and flows
+model EmailTemplate {
+  id          String                @id @default(auto()) @map("_id") @db.ObjectId
+  name        String                // Template name
+  description String?               // Description of template purpose
+  category    EmailTemplateCategory @default(custom)
+  tags        String[]              @default([])
+
+  // Email content
+  subject    String  // Subject line with placeholders
+  preheader  String? // Preview text shown in inbox
+  body       String  // Plain text version (required)
+  html       String? // Rich HTML version (optional)
+  designJson Json?   // Unlayer visual editor design JSON for re-editing
+  signature  String? // Optional sign-off text
+
+  // Template metadata
+  isDefault      Boolean @default(false) // System default template
+  isPublic       Boolean @default(true)  // Available to all users
+  thumbnailUrl   String?                  // Preview image URL
+  version        Int     @default(1)      // Version number
+  usageCount     Int     @default(0)      // How many times used
+
+  // Ownership
+  createdBy String  @db.ObjectId
+  creator   User    @relation("EmailTemplateCreatedByUser", fields: [createdBy], references: [id])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([createdBy])
+  @@index([isDefault])
+  @@index([name])
+}
+
+// ------------------------------------------------------
+// SETTINGS (Global Configuration)
+// ------------------------------------------------------
+
+// Global settings record for the installation
+// There should only be one record in this collection
+model Settings {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @default("Kling") // Installation name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // General settings
+  timezone              String  @default("UTC")
+  defaultMessageChannel MessageChannel @default(email)
+  dailyMessageLimit     Int     @default(1000)
+  monthlyMessageLimit   Int     @default(30000)
+  quietHoursStart       String? // e.g., "22:00"
+  quietHoursEnd         String? // e.g., "08:00"
+  quietHoursEnabled     Boolean @default(false) // DST-safe quiet hours
+  quietHoursDays        Int[]   @default([0, 1, 2, 3, 4, 5, 6]) // Days of week (0=Sun, 6=Sat)
+
+  // Multi-channel fallback settings
+  fallbackEnabled       Boolean @default(true)
+  fallbackOrder         MessageChannel[] @default([]) // Custom fallback order
+  fallbackMaxAttempts   Int     @default(2)
+
+  // Signup restriction settings
+  // "open" - anyone can signup
+  // "domain_restricted" - only emails ending in allowedSignupDomains can signup
+  // "disabled" - signup is disabled, users can only be invited (default)
+  signupMode            String   @default("disabled")
+  allowedSignupDomains  String[] @default([]) // e.g., ["company.com", "partner.org"]
+
+  // Audit log retention settings
+  // Default: 7 days (1 week), minimum: 1 day (hard limit enforced in API)
+  auditLogRetentionDays Int      @default(7)
+
+  // Email Provider Settings
+  // When useMockEmail is true, mock provider is used regardless of credentials
+  useMockEmail          Boolean  @default(true)
+  resendApiKey          String?
+  resendFromAddress     String?  // e.g., "noreply@yourdomain.com"
+  resendFromName        String?  // e.g., "Kling"
+  resendWebhookSecret   String?
+
+  // SMS Provider Settings
+  // When useMockSms is true, mock provider is used regardless of credentials
+  useMockSms            Boolean  @default(true)
+  twilioAccountSid      String?
+  twilioAuthToken       String?
+  twilioFromNumber      String?  // E.164 format: +15551234567
+  twilioMessagingServiceSid String?  // Optional: recommended for production
+
+  // WhatsApp Provider Settings (via Twilio)
+  // Uses same Twilio credentials as SMS
+  useMockWhatsApp       Boolean  @default(true)
+  twilioWhatsAppNumber  String?  // WhatsApp-enabled number, E.164 format
+
+  // RCS Provider Settings (via Twilio)
+  // Uses same Twilio credentials as SMS
+  useMockRcs            Boolean  @default(true)
+  twilioRcsAgentId      String?  // RCS Business Messaging agent ID
+
+  // Push Provider Settings (Firebase Cloud Messaging)
+  useMockPush           Boolean  @default(true)
+  fcmProjectId          String?  // Firebase project ID
+  fcmPrivateKey         String?  // Service account private key (PEM format)
+  fcmClientEmail        String?  // Service account client email
+
+  // AI Provider Settings
+  openaiApiKey          String?  // OpenAI API key for natural language campaign creation
+
+  // Cart Abandonment Detection Settings
+  cartAbandonmentEnabled      Boolean @default(false)  // Enable internal cart abandonment detection
+  cartAbandonmentTimeoutMins  Int     @default(60)     // Minutes after last cart activity to consider abandoned (1-1440)
+  cartAbandonmentCheckCron    String  @default("*/15 * * * *")  // How often to check for abandoned carts (default: every 15 mins)
+
+  // Revenue Attribution Settings
+  attributionEnabled          Boolean @default(true)    // Enable revenue attribution tracking
+  attributionWindowDays       Int     @default(7)       // Attribution window in days (7 or 30)
+  attributionModel            String  @default("last_touch")  // "last_touch" | "first_touch" | "linear"
+
+  // Browse Abandonment Detection Settings
+  browseAbandonmentEnabled      Boolean @default(false)  // Enable internal browse abandonment detection
+  browseAbandonmentTimeoutMins  Int     @default(120)    // Minutes after product view to consider abandoned (1-1440, default 2 hours)
+  browseAbandonmentCheckCron    String  @default("*/30 * * * *")  // How often to check (default: every 30 mins)
+
+  // Predictive Analytics Settings
+  predictionsEnabled            Boolean @default(false)  // Master switch for predictions
+  predictionCalculationCron     String  @default("0 2 * * *")  // Daily at 2am
+  predictionMinOrders           Int     @default(2)      // Min orders for LTV/churn calculation
+  predictionMinMessages         Int     @default(5)      // Min messages for engagement score
+  predictionLookbackDays        Int     @default(90)     // Days to look back for engagement
+
+  // Database Backup Settings
+  backupEnabled             Boolean @default(false)        // Master switch for scheduled backups
+  backupScheduleTime        String  @default("02:00")      // Time of day for backup (HH:MM format)
+  backupRetentionDays       Int     @default(7)            // Days to keep backups (1-365)
+  backupS3Bucket            String?                        // S3 bucket name
+  backupS3Region            String  @default("us-east-1")  // AWS region
+  backupS3AccessKeyId       String?                        // AWS access key ID
+  backupS3SecretAccessKey   String?                        // AWS secret access key
+  backupS3Endpoint          String?                        // Custom S3 endpoint (for MinIO, etc.)
+}
+
+// ------------------------------------------------------
+// BACKUPS (Database Backup History)
+// ------------------------------------------------------
+
+model Backup {
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  filename        String       // backup-{timestamp}.tar.gz
+  status          BackupStatus @default(pending)
+  type            BackupType
+  sizeBytes       Int?         // Size of the backup file
+  s3Key           String?      // S3 object key if uploaded
+  s3Bucket        String?      // S3 bucket (copied from settings at backup time)
+
+  // Timing
+  startedAt       DateTime     @default(now())
+  completedAt     DateTime?
+
+  // Metadata
+  databaseName    String       // MongoDB database name
+  collectionCount Int?         // Number of collections backed up
+  documentCount   Int?         // Total documents backed up
+
+  // Error tracking
+  errorMessage    String?
+
+  // Audit
+  triggeredBy     String       // User ID who triggered (or "system" for scheduled)
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([s3Key])
+}
+
+// ------------------------------------------------------
+// CUSTOMERS
+// ------------------------------------------------------
+
+model Customer {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  externalId    String?   // External system ID for deduplication (not unique - handled in app logic)
+  email         String?   @unique
+  phone         String?
+  whatsappNumber String?  // WhatsApp number if different from phone (E.164 format)
+  pushToken     String?   // FCM device token for push notifications
+  pushPlatform  String?   // "ios" | "android" | "web"
+  name          String?
+  optOut        Boolean   @default(false)
+  optOutChannels MessageChannel[] // Per-channel opt-out
+  lastContactAt DateTime?
+  lastOrderAt   DateTime?
+  totalOrders   Int       @default(0)
+  totalSpent    Float     @default(0)
+  metadata      Json?     // Flexible customer attributes
+
+  // Personal details (optional)
+  firstName     String?
+  lastName      String?
+  birthDate     DateTime? // For birthday campaigns
+  gender        String?   // e.g., "male", "female", "other", "prefer_not_to_say"
+
+  // Address fields (optional, for location-based campaigns)
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  state         String?   // State/province/region
+  postalCode    String?
+  country       String?   // ISO country code (e.g., "US", "GB", "AU")
+
+  // Engagement & preferences (optional)
+  preferredChannel MessageChannel? // Customer's preferred contact channel
+  language      String?   // Preferred language (e.g., "en", "es", "fr")
+  timezone      String?   // Customer's timezone
+
+  // Loyalty & segmentation (optional)
+  loyaltyTier   String?   // e.g., "bronze", "silver", "gold", "platinum"
+  loyaltyPoints Int?      // Accumulated loyalty points
+  customerSince DateTime? // When they became a customer
+  referralSource String?  // e.g., "google", "facebook", "friend", "email"
+
+  // Engagement metrics (optional)
+  avgOrderValue Float?    // Average order value
+  orderFrequency Float?   // Orders per month
+  lastEmailOpenedAt DateTime? // Last email engagement
+  lastEmailClickedAt DateTime? // Last click engagement
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders          Order[]
+  messageLogs     MessageLog[]
+  consents        ConsentLog[]
+  events          CustomerEvent[]
+  flowEnrollments FlowEnrollment[]
+  formSubmissions FormSubmission[]
+  prediction      CustomerPrediction?
+
+  @@index([birthDate])
+  @@index([city])
+  @@index([country])
+  @@index([loyaltyTier])
+  // Performance optimization indexes
+  @@index([lastOrderAt])
+  @@index([totalOrders])
+  @@index([totalSpent])
+  @@index([optOut])
+  @@index([externalId])
+}
+
+// Customer Send Time Profile - Stores optimal send hour for each customer
+// Used by Send Time Optimization feature to stagger campaign sends
+model CustomerSendTimeProfile {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId          String   @unique @db.ObjectId
+  optimalHour         Int      // 0-23 (hour in customer's timezone)
+  confidence          Float    // 0.0-1.0 (how confident we are in this prediction)
+  sampleSize          Int      // Number of opens analyzed
+  hourlyDistribution  Json     // { "0": 2, "9": 15, "10": 8, ... }
+  timezone            String?  // Customer's timezone (cached from Customer)
+  calculatedAt        DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([optimalHour])
+  @@index([confidence])
+}
+
+// Customer Prediction - Stores computed predictive analytics scores
+// Used for segmentation: predicted LTV, churn risk, engagement score
+model CustomerPrediction {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String   @unique @db.ObjectId
+
+  // Predicted Lifetime Value (CLV)
+  predictedLTV       Float?   // Predicted customer lifetime value (next 12 months)
+  avgOrderValue      Float?   // Cached: average order value
+  purchaseFrequency  Float?   // Cached: orders per month
+
+  // Churn Risk Score (0-1)
+  churnRiskScore     Float?   // 0 = no risk, 1 = high risk
+  daysSinceLastOrder Int?     // Days since last purchase
+  avgDaysBetween     Float?   // Average days between purchases
+  expectedNextOrder  DateTime? // Predicted next order date
+
+  // Engagement Score (0-100)
+  engagementScore    Float?   // Overall engagement score
+  emailOpenRate      Float?   // Email open rate (0-1)
+  emailClickRate     Float?   // Email click rate (0-1)
+  messagesSent       Int?     // Total messages sent (lookback period)
+  messagesEngaged    Int?     // Total engaged (opened/clicked)
+
+  // Metadata
+  calculatedAt       DateTime @default(now())
+  sampleSize         Int      @default(0) // Orders/messages used
+  confidence         Float?   // 0-1 confidence score
+
+  // Audit fields (cached from Customer)
+  lastOrderAt        DateTime?
+  totalOrders        Int       @default(0)
+  totalSpent         Float     @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([predictedLTV])
+  @@index([churnRiskScore])
+  @@index([engagementScore])
+  @@index([calculatedAt])
+  @@index([confidence])
+}
+
+// ------------------------------------------------------
+// ORDERS & ORDER ITEMS
+// ------------------------------------------------------
+
+model Order {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId  String   @db.ObjectId
+  total       Float
+  purchasedAt DateTime @default(now())
+
+  // Order status tracking (for refund/return aggregations)
+  status      OrderStatus @default(completed)
+
+  // Coupon tracking (for coupon_usage_rate aggregation)
+  couponCode  String?
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  items OrderItem[]
+
+  @@index([customerId])
+  @@index([status])
+  // Performance optimization indexes
+  @@index([purchasedAt])
+  @@index([total])
+  @@index([customerId, purchasedAt])
+}
+
+model OrderItem {
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  orderId  String  @db.ObjectId
+  sku      String
+  name     String
+  category String?
+  price    Float
+  quantity Int     @default(1)
+
+  // Product details (optional)
+  brand        String?  // e.g., "Nike", "Apple", "Samsung"
+  subcategory  String?  // More granular category (e.g., "running shoes", "laptops")
+  productType  String?  // e.g., "physical", "digital", "subscription"
+
+  // Pricing details (optional)
+  originalPrice Float?  // Original price before discount
+  discount      Float?  // Discount amount applied
+
+  // Product attributes (optional)
+  size         String?  // e.g., "S", "M", "L", "XL", "42", "10.5"
+  color        String?  // e.g., "red", "blue", "black"
+  variant      String?  // Generic variant identifier
+
+  // Inventory & sourcing (optional)
+  inStock      Boolean? // Whether item was in stock at purchase
+  isOnSale     Boolean? // Whether item was on sale
+  isNewArrival Boolean? // Whether item was a new arrival
+
+  // Additional metadata (optional)
+  tags         String[] // Flexible tags for categorization
+
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([category])
+  @@index([brand])
+}
+
+// ------------------------------------------------------
+// CAMPAIGN DEFINITIONS
+// ------------------------------------------------------
+
+model CampaignDefinition {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  createdBy String @db.ObjectId
+
+  name            String
+  description     String?
+  query           String  // DSL or structured query
+  channel         MessageChannel
+  conditions      Json
+  retrieval       Json?
+  status          CampaignStatus @default(active)
+
+  // Message content: Inline content based on channel
+  email           EmailContent?     // Email channel content (required if channel=email)
+  sms             SmsContent?       // SMS channel content (required if channel=sms)
+  whatsapp        WhatsAppContent?  // WhatsApp channel content (required if channel=whatsapp)
+  rcs             RcsContent?       // RCS channel content (required if channel=rcs)
+  push            PushContent?      // Push channel content (required if channel=push)
+
+  // BullMQ is the source of truth for scheduling
+  // This key references the repeatable job in Redis
+  bullmqJobKey    String? @unique
+
+  // Cached schedule fields (denormalized from BullMQ for querying convenience)
+  // These are set when creating/updating schedules but BullMQ is authoritative
+  cron            String?
+  startAt         DateTime?
+  endAt           DateTime?
+  timezone        String?
+
+  // Execution type: "recurring" (cron-based) or "once" (single execution)
+  executionType   String  @default("recurring")
+  executedOnce    Boolean @default(false)  // Tracks if "once" campaign has run
+
+  // Embedded promotion configuration (optional)
+  discount        CampaignDiscount?  // Optional discount for this campaign
+  gift            CampaignGift?      // Optional gift for this campaign
+
+  // LLM/DSL tracking (Journey 3)
+  originalPrompt  String? // Store the original NL prompt if created from LLM
+  parsedDsl       Json?   // The parsed DSL for audit/debugging
+  idempotencyKey  String? @unique // For duplicate detection
+
+  // Versioning (Journey 4)
+  version         Int     @default(1)
+  previousVersion String? @db.ObjectId // Reference to previous version
+
+  // Send Time Optimization
+  // When enabled, messages are staggered to hit each customer's optimal send hour
+  enableSendTimeOptimization Boolean @default(false)
+  defaultSendHour            Int?    // 0-23, fallback hour if customer has no profile
+  maxOptimizationWindow      Int     @default(24) // Max hours to delay (prevents stale jobs)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creator      User?            @relation("CreatedByUser", fields: [createdBy], references: [id])
+  messageLogs  MessageLog[]
+  executions   CampaignExecution[]
+  experiments  Experiment[]
+
+  // Tracking relations for promotion redemptions
+  discountRedemptions DiscountRedemption[]
+  giftGrants          GiftGrant[]
+
+  @@index([createdBy])
+  @@index([status])
+  @@index([executionType])
+}
+
+// ------------------------------------------------------
+// MESSAGE LOGGING
+// ------------------------------------------------------
+
+model MessageLog {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId String? @db.ObjectId // Optional for non-campaign messages
+  customerId String  @db.ObjectId
+
+  channel        MessageChannel
+  recipient      String         // Email address, phone number, etc.
+  subject        String?        // For email messages
+  body           String         // Message content
+  sentAt         DateTime?
+  deliveryStatus DeliveryStatus @default(pending)
+
+  // Provider tracking (Journey 8)
+  providerName      String?  // e.g., "sendgrid", "twilio"
+  providerMessageId String?  // External message ID from provider
+  providerResponse  Json?    // Raw provider response
+
+  // Retry handling (Journey 8)
+  retryCount        Int      @default(0)
+  lastRetryAt       DateTime?
+  nextRetryAt       DateTime?
+  deadLetteredAt    DateTime?
+  errorMessage      String?
+
+  // BullMQ correlation (Journey 6)
+  correlationId     String?  // BullMQ job correlation ID
+  executionId       String?  @db.ObjectId // Reference to CampaignExecution
+
+  // Test flag (Journey 5)
+  isTest            Boolean  @default(false)
+
+  // Delivered/opened/clicked timestamps
+  deliveredAt       DateTime?
+  openedAt          DateTime?
+  clickedAt         DateTime?
+
+  // Experiment tracking (A/B Testing)
+  experimentId      String?  @db.ObjectId
+  cohort            String?  // "control" | "treatment"
+
+  // Flow tracking (links messages to flow enrollments)
+  flowId            String?  @db.ObjectId  // Flow that generated this message
+  flowEnrollmentId  String?  @db.ObjectId  // Enrollment that generated this message
+  flowStepId        String?                // Node ID within the flow
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign       CampaignDefinition? @relation(fields: [campaignId], references: [id])
+  customer       Customer?           @relation(fields: [customerId], references: [id])
+  user           User?               @relation(fields: [userId], references: [id])
+  userId         String?             @db.ObjectId
+  flow           Flow?               @relation(fields: [flowId], references: [id])
+  flowEnrollment FlowEnrollment?     @relation(fields: [flowEnrollmentId], references: [id])
+
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([deliveryStatus])
+  @@index([correlationId])
+  @@index([providerMessageId])
+  @@index([experimentId])
+  @@index([flowId])
+  @@index([flowEnrollmentId])
+  // Performance optimization indexes for quota checks
+  @@index([sentAt, deliveryStatus])
+  @@index([sentAt])
+}
+
+// ------------------------------------------------------
+// OPTIONAL: OAuth Providers
+// ------------------------------------------------------
+
+model UserProvider {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  provider   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+// ------------------------------------------------------
+// INVITATIONS
+// ------------------------------------------------------
+
+model Invitation {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  email     String
+  role      UserRole     @default(STAFF)
+  status    InviteStatus @default(pending)
+
+  token     String       @unique // Secure random token
+  expiresAt DateTime     // When the invite expires
+
+  invitedBy String       @db.ObjectId // User who sent the invite
+  acceptedBy String?     @db.ObjectId // User who accepted (if any)
+  acceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([status])
+}
+
+// ------------------------------------------------------
+// AUDIT LOGS
+// ------------------------------------------------------
+
+model AuditLog {
+  id        String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String?     @db.ObjectId // Who performed the action
+  action    AuditAction
+
+  // Context
+  resourceType String?   // e.g., "campaign", "customer", "settings"
+  resourceId   String?   // ID of the affected resource
+  metadata     Json?     // Additional context (old/new values, etc.)
+
+  // Request context
+  ipAddress    String?
+  userAgent    String?
+  requestId    String?
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+// ------------------------------------------------------
+// CONSENT LOGS
+// ------------------------------------------------------
+
+model ConsentLog {
+  id         String      @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String      @db.ObjectId
+
+  consentType ConsentType
+  granted     Boolean     // true = consent given, false = consent withdrawn
+  source      String      // e.g., "signup_form", "email_link", "api"
+  ipAddress   String?
+
+  createdAt DateTime @default(now())
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([consentType])
+}
+
+// ------------------------------------------------------
+// SUPPRESSION LIST
+// ------------------------------------------------------
+
+model SuppressionEntry {
+  id        String         @id @default(auto()) @map("_id") @db.ObjectId
+  channel   MessageChannel
+  value     String         // Email address, phone number, etc.
+  reason    String?        // e.g., "unsubscribed", "bounced", "complained"
+  source    String?        // e.g., "user_request", "provider_webhook"
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime?      // For temporary suppressions
+
+  // Link to import batch (if imported)
+  importId  String?        @db.ObjectId
+
+  @@unique([channel, value])
+  @@index([importId])
+}
+
+// ------------------------------------------------------
+// SUPPRESSION IMPORT HISTORY
+// ------------------------------------------------------
+
+model SuppressionImportHistory {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  importedBy   String   @db.ObjectId  // User who performed the import
+  filename     String                 // Original filename
+  fileSize     Int                    // File size in bytes
+
+  // Import statistics
+  rowsTotal      Int    // Total rows in CSV (excluding header)
+  rowsProcessed  Int    // Successfully processed rows
+  rowsSkipped    Int    // Skipped due to duplicates
+  rowsInvalid    Int    // Invalid rows (validation failed)
+
+  // Validation error details
+  validationErrors Json?  // Array of {row, column, message}
+
+  // Timestamps
+  importedAt   DateTime @default(now())
+
+  @@index([importedBy])
+  @@index([importedAt])
+}
+
+// General import history for Klaviyo migrations
+model ImportHistory {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  type       String   // klaviyo_profiles, klaviyo_lists, klaviyo_events
+  source     String   // klaviyo, mailchimp, etc.
+
+  // Statistics
+  total      Int      // Total records in import
+  imported   Int      // Successfully imported
+  skipped    Int      // Skipped (duplicates, etc.)
+  failed     Int      // Failed to import
+
+  // Error details
+  errors     Json?    // Array of error objects
+
+  // Tracking
+  importedBy String   // User ID who performed import
+  createdAt  DateTime @default(now())
+
+  @@index([type])
+  @@index([source])
+  @@index([importedBy])
+  @@index([createdAt])
+}
+
+// ------------------------------------------------------
+// CUSTOMER EVENTS
+// ------------------------------------------------------
+
+model CustomerEvent {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String   @db.ObjectId
+
+  eventType  String   // e.g., "order_placed", "email_opened", "link_clicked"
+  eventData  Json?    // Event-specific payload
+  occurredAt DateTime @default(now())
+
+  // Idempotency
+  idempotencyKey String? @unique
+
+  // Source tracking
+  source     String?  // e.g., "webhook", "api", "system"
+
+  createdAt DateTime @default(now())
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([eventType])
+  @@index([occurredAt])
+}
+
+// ------------------------------------------------------
+// EXPERIMENTS (A/B Testing)
+// ------------------------------------------------------
+
+model Experiment {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId   String   @db.ObjectId
+
+  name         String
+  description  String?
+
+  controlPercent   Int @default(50)   // Percentage for control group
+  treatmentPercent Int @default(50)   // Percentage for treatment group
+
+  // Treatment variant - what changes for treatment group
+  treatmentSubject    String?   // Override email subject
+  treatmentBody       String?   // Override message body
+  treatmentHtml       String?   // Override HTML (email)
+
+  // Conversion goal configuration
+  conversionGoal       String?  // "order_placed" | "link_clicked" | "code_redeemed"
+  conversionWindowDays Int?     @default(7)  // Days after send to track conversions
+
+  status       String   @default("draft") // draft, running, paused, completed
+
+  startedAt    DateTime?
+  endedAt      DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaign     CampaignDefinition? @relation(fields: [campaignId], references: [id])
+  assignments  ExperimentAssignment[]
+
+  @@index([campaignId])
+  @@index([status])
+}
+
+model ExperimentAssignment {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId String   @db.ObjectId
+  customerId   String   @db.ObjectId
+
+  cohort       String   // "control" or "treatment"
+
+  // Conversion tracking
+  converted    Boolean  @default(false)
+  convertedAt  DateTime?
+  conversionValue Float?
+
+  assignedAt   DateTime @default(now())
+
+  experiment   Experiment? @relation(fields: [experimentId], references: [id])
+
+  @@unique([experimentId, customerId])
+  @@index([experimentId])
+  @@index([customerId])
+  @@index([cohort])
+}
+
+// ------------------------------------------------------
+// CAMPAIGN EXECUTIONS
+// ------------------------------------------------------
+
+model CampaignExecution {
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId   String @db.ObjectId
+
+  // BullMQ tracking
+  correlationId    String?
+  bullMqJobId String?
+
+  // Execution stats
+  status           String   @default("running") // running, completed, failed, cancelled
+  startedAt        DateTime @default(now())
+  completedAt      DateTime?
+
+  // Results
+  customersMatched Int      @default(0)
+  messagesSent     Int      @default(0)
+  messagesSkipped  Int      @default(0)
+  messagesFailed   Int      @default(0)
+
+  // Error tracking
+  errorMessage     String?
+  errorDetails     Json?
+
+  // Is this a test run?
+  isTest           Boolean  @default(false)
+
+  campaign CampaignDefinition? @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([correlationId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ------------------------------------------------------
+// PROMOTION TRACKING (Linked to Campaigns)
+// ------------------------------------------------------
+
+// Tracks discount redemptions for campaigns
+model DiscountRedemption {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId String   @db.ObjectId  // Campaign that offered the discount
+  customerId String   @db.ObjectId
+  orderId    String?  @db.ObjectId  // Order where discount was applied
+
+  // Discount details (denormalized from campaign for history)
+  discountType  String               // percentage, fixed_amount, free_shipping
+  discountValue Float                // Actual discount amount applied
+  code          String?              // The promo code used
+
+  redeemedAt    DateTime @default(now())
+
+  // Status
+  status        String @default("applied") // applied, reversed, expired
+
+  // Reversal tracking
+  reversedAt    DateTime?
+  reversalReason String?
+
+  campaign CampaignDefinition? @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([code])
+}
+
+// Tracks gift grants for campaigns
+model GiftGrant {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId String   @db.ObjectId  // Campaign that offered the gift
+  customerId String   @db.ObjectId
+  orderId    String?  @db.ObjectId  // Order where gift was redeemed (if applicable)
+
+  // Gift details (denormalized from campaign for history)
+  giftType      String               // free_sku, free_sample, redemption_code
+  sku           String?              // SKU of the gift product
+  value         String?              // Description or value
+  code          String?              // Unique code for this grant (if applicable)
+
+  reservedAt    DateTime?            // When inventory was reserved
+  grantedAt     DateTime @default(now())
+
+  // Status
+  status        String @default("granted") // reserved, granted, redeemed, expired, cancelled
+
+  // Redemption tracking
+  redeemedAt    DateTime?
+  expiresAt     DateTime?            // When this grant expires
+
+  campaign CampaignDefinition? @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([code])
+  @@index([status])
+}
+
+// ------------------------------------------------------
+// E-COMMERCE INTEGRATIONS
+// ------------------------------------------------------
+
+model Integration {
+  id           String              @id @default(auto()) @map("_id") @db.ObjectId
+  platform     IntegrationPlatform
+  name         String              // User-friendly name, e.g., "My Shopify Store"
+
+  // Store identification
+  shopDomain   String?             // e.g., "mystore.myshopify.com"
+  storeId      String?             // Platform-specific store ID
+
+  // OAuth credentials (encrypted in app layer)
+  accessToken  String?
+  refreshToken String?
+  tokenExpiresAt DateTime?
+  scopes       String[]            @default([])
+
+  // Webhook configuration
+  webhookSecret String?            // For verifying incoming webhooks
+  webhookIds    String[]           @default([]) // Platform webhook IDs for cleanup
+
+  // Sync status
+  syncStatus   IntegrationSyncStatus @default(PENDING)
+  lastSyncAt   DateTime?
+  lastSyncError String?
+
+  // Feature flags
+  syncCustomers Boolean @default(true)
+  syncOrders    Boolean @default(true)
+  syncProducts  Boolean @default(false) // Optional product catalog sync
+
+  // Metadata
+  platformVersion String?          // e.g., "2024-01" for Shopify API version
+  metadata      Json?              // Platform-specific settings
+
+  createdBy    String   @db.ObjectId
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Track synced entities
+  syncLogs     IntegrationSyncLog[]
+
+  @@unique([platform, shopDomain])
+  @@unique([platform, storeId])
+  @@index([platform])
+  @@index([syncStatus])
+  @@index([createdBy])
+}
+
+model IntegrationSyncLog {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  integrationId String   @db.ObjectId
+
+  // Sync details
+  entityType    String   // "customers", "orders", "products"
+  direction     String   // "inbound" (from platform) or "outbound" (to platform)
+
+  // Stats
+  status        String   @default("running") // running, completed, failed
+  recordsProcessed Int   @default(0)
+  recordsCreated   Int   @default(0)
+  recordsUpdated   Int   @default(0)
+  recordsFailed    Int   @default(0)
+
+  // Timing
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  // Error tracking
+  errorMessage  String?
+  errorDetails  Json?
+
+  integration Integration? @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ------------------------------------------------------
+// FLOWS (Event-Driven Automation)
+// ------------------------------------------------------
+
+model Flow {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdBy   String   @db.ObjectId
+  name        String
+  description String?
+
+  // Trigger configuration
+  triggerType   FlowTriggerType
+  triggerConfig Json?  // Additional trigger params (e.g., specific list ID, event filters)
+
+  // Flow definition as graph (nodes + edges)
+  // Format: { nodes: [{id, type, config}, ...], edges: [{id, from, to, condition?}, ...], startNodeId: string }
+  definition  Json
+
+  // Status (reuses CampaignStatus)
+  status      CampaignStatus @default(paused)
+
+  // Enrollment limits
+  allowReenrollment    Boolean @default(false)  // Can customer re-enter after exiting?
+  reenrollmentWaitDays Int?    // Days to wait before re-enrollment
+  maxEnrollments       Int?    // Global enrollment cap
+
+  // NLP tracking (if created via natural language)
+  originalPrompt String?
+  parsedDsl      Json?
+  idempotencyKey String? @unique
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  creator         User?            @relation("FlowCreatedByUser", fields: [createdBy], references: [id])
+  enrollments     FlowEnrollment[]
+  messageLogs     MessageLog[]
+  formsTriggering Form[]           @relation("FormTriggersFlow")
+
+  @@index([triggerType])
+  @@index([status])
+  @@index([createdBy])
+}
+
+model FlowEnrollment {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  flowId      String   @db.ObjectId
+  customerId  String   @db.ObjectId
+
+  // Current state
+  status         FlowEnrollmentStatus @default(active)
+  currentStepId  String?  // Node ID from flow definition
+
+  // Journey tracking
+  enrolledAt     DateTime @default(now())
+  completedAt    DateTime?
+  exitedAt       DateTime?
+  lastStepAt     DateTime? // Last step execution time
+
+  // Execution metadata
+  stepsCompleted Int @default(0)
+  stepsFailed    Int @default(0)
+
+  // Context data (for variable substitution, conditions)
+  // Stores trigger event data, customer snapshot at enrollment time
+  contextData    Json?
+
+  // Error tracking
+  errorMessage   String?
+  errorDetails   Json?
+
+  // BullMQ correlation
+  correlationId  String?  // For tracing jobs
+
+  // Trigger event reference
+  triggerEventId String?  @db.ObjectId
+
+  // Relations
+  flow        Flow?        @relation(fields: [flowId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  messageLogs MessageLog[]
+
+  @@unique([flowId, customerId, enrolledAt])  // Allow re-enrollment with different timestamp
+  @@index([flowId])
+  @@index([customerId])
+  @@index([status])
+  @@index([enrolledAt])
+  @@index([correlationId])
+}
+
+// ------------------------------------------------------
+// FORMS (Signup Forms, Popups, Embedded Forms)
+// ------------------------------------------------------
+
+enum FormType {
+  popup
+  embedded
+  banner
+  flyout
+}
+
+enum FormStatus {
+  draft
+  active
+  paused
+  archived
+}
+
+model Form {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  createdBy   String     @db.ObjectId
+
+  name        String
+  description String?
+  type        FormType   @default(popup)
+  status      FormStatus @default(draft)
+
+  // @coltorapps/builder schema (JSON)
+  // Format: { entities: { "uuid": { type: "textField", attributes: {...} } }, root: ["uuid1", "uuid2"] }
+  schema      Json
+
+  // Display settings
+  styling     Json?      // { primaryColor, backgroundColor, buttonText, borderRadius, etc. }
+
+  // Trigger configuration
+  // Format: { type: "time_delay" | "scroll_depth" | "exit_intent", value?: number }
+  triggerRules Json?
+
+  // Targeting
+  displayOnUrls   String[]  @default([])  // URL patterns to show form on
+  excludeUrls     String[]  @default([])  // URL patterns to exclude
+  deviceTargeting String    @default("all") // "all" | "desktop" | "mobile"
+
+  // Display frequency
+  displayFrequency String   @default("once_per_session") // once_per_session | once_per_day | always
+
+  // Success action
+  successMessage  String?   // Message to show after submission
+  successRedirect String?   // URL to redirect to after submission
+
+  // Flow trigger automation
+  triggerFlowOnSubmit Boolean @default(false)  // Enroll customer in flow on form submission
+  flowToTriggerId     String? @db.ObjectId     // Flow to trigger on submission
+
+  // Timestamps
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  creator       User       @relation("FormCreatedByUser", fields: [createdBy], references: [id])
+  submissions   FormSubmission[]
+  flowToTrigger Flow?      @relation("FormTriggersFlow", fields: [flowToTriggerId], references: [id])
+
+  @@index([createdBy])
+  @@index([status])
+  @@index([type])
+  @@index([flowToTriggerId])
+}
+
+model FormSubmission {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  formId     String   @db.ObjectId
+  customerId String?  @db.ObjectId
+
+  // Submitted form data
+  // Format: { "field-uuid-1": "john@example.com", "field-uuid-2": "John Doe" }
+  data       Json
+
+  // Submission metadata
+  metadata   Json?    // { ip, userAgent, referrer, pageUrl }
+
+  submittedAt DateTime @default(now())
+
+  // Relations
+  form     Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([formId])
+  @@index([customerId])
+  @@index([submittedAt])
+}
+
+// ------------------------------------------------------
+// PRODUCT CATALOG (For Recommendations)
+// ------------------------------------------------------
+
+model Product {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  sku         String   @unique  // Product SKU
+  name        String
+  description String?
+
+  // Categorization
+  category    String?
+  subcategory String?
+  brand       String?
+  tags        String[] @default([])
+
+  // Pricing
+  price       Float
+  salePrice   Float?
+  currency    String   @default("USD")
+
+  // Images
+  imageUrl    String?
+  thumbnailUrl String?
+  imageUrls   String[] @default([])  // Additional images
+
+  // Inventory
+  inventory   Int      @default(0)
+  inStock     Boolean  @default(true)
+
+  // Flags
+  isActive              Boolean @default(true)
+  isNewArrival          Boolean @default(false)
+  isOnSale              Boolean @default(false)
+  excludeFromRecommendations Boolean @default(false)
+
+  // External IDs (for integrations)
+  externalId  String?  // Platform-specific product ID
+  platform    String?  // Source platform (shopify, woocommerce, etc.)
+
+  // SEO/Marketing
+  url         String?  // Product page URL
+  metaTitle   String?
+  metaDescription String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  browseEvents BrowseEvent[]
+
+  @@index([category])
+  @@index([brand])
+  @@index([isActive])
+  @@index([price])
+  @@index([externalId, platform])
+}
+
+// ------------------------------------------------------
+// BROWSE EVENTS (For Recently Viewed & Browse Abandonment)
+// ------------------------------------------------------
+
+enum BrowseEventType {
+  viewed_product      // Customer viewed product page
+  added_to_cart       // Customer added to cart
+  removed_from_cart   // Customer removed from cart
+  added_to_wishlist   // Customer added to wishlist
+  searched            // Customer searched
+  category_viewed     // Customer viewed category page
+}
+
+model BrowseEvent {
+  id         String          @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String          @db.ObjectId
+  productId  String?         @db.ObjectId
+  sku        String?         // For quick lookup without join
+
+  eventType  BrowseEventType
+  eventData  Json?           // Additional data (search query, category, etc.)
+
+  // Context
+  sessionId  String?         // Browser session ID
+  pageUrl    String?         // URL where event occurred
+  referrer   String?         // Referring page
+  deviceType String?         // desktop, mobile, tablet
+
+  occurredAt DateTime        @default(now())
+
+  // Relations
+  product    Product?        @relation(fields: [productId], references: [id])
+
+  @@index([customerId])
+  @@index([productId])
+  @@index([sku])
+  @@index([eventType])
+  @@index([occurredAt])
+  @@index([customerId, eventType, occurredAt])
+}
+
+// ------------------------------------------------------
+// RECOMMENDATION CACHE (Performance Optimization)
+// ------------------------------------------------------
+
+enum RecommendationAlgorithm {
+  best_sellers          // Top selling products globally
+  recently_viewed       // Products customer recently viewed
+  collaborative_filter  // "Customers like you also bought"
+  copurchase           // "Frequently bought together"
+  content_based        // Similar products by attributes
+  personalized_mix     // AI-powered mix of algorithms
+}
+
+model RecommendationCache {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId      String?  @db.ObjectId  // Null for global recommendations (best sellers)
+  algorithm       RecommendationAlgorithm
+
+  // Cached recommendations
+  // Format: [{ sku, score, reason }]
+  recommendations Json
+
+  // Metadata
+  productCount    Int      @default(0)
+  confidence      Float    @default(0)  // 0-1 confidence in recommendations
+
+  // Cache management
+  generatedAt     DateTime @default(now())
+  expiresAt       DateTime
+
+  // Query context (for cache invalidation)
+  categoryFilter  String?  // If filtered by category
+  brandFilter     String?  // If filtered by brand
+
+  @@unique([customerId, algorithm, categoryFilter, brandFilter])
+  @@index([customerId])
+  @@index([algorithm])
+  @@index([expiresAt])
+}
+
+// ------------------------------------------------------
+// CO-PURCHASE PATTERNS (For "Bought Together" Recommendations)
+// ------------------------------------------------------
+
+model CopurchasePattern {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+
+  // Product pair
+  sourceSku       String   // Product A
+  recommendedSku  String   // Product B (recommended when A is viewed/bought)
+
+  // Statistics
+  copurchaseCount Int      @default(0)   // Number of orders with both products
+  copurchaseRate  Float    @default(0)   // % of orders with A that also have B
+  avgQuantity     Float    @default(1)   // Average quantity of B when bought with A
+
+  // Direction
+  direction       String   @default("bidirectional")  // "a_to_b", "b_to_a", "bidirectional"
+
+  // Recency weighting
+  recentOrders    Int      @default(0)   // Orders in last 30 days with this pattern
+  lastSeenAt      DateTime @default(now())
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([sourceSku, recommendedSku])
+  @@index([sourceSku])
+  @@index([recommendedSku])
+  @@index([copurchaseRate])
+  @@index([copurchaseCount])
+}
+
+// ------------------------------------------------------
+// RECOMMENDATION CLICKS (For Tracking & Optimization)
+// ------------------------------------------------------
+
+model RecommendationClick {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId     String   @db.ObjectId
+
+  // What was recommended
+  algorithm      RecommendationAlgorithm
+  recommendedSku String
+  position       Int      // Position in recommendation list (1-based)
+
+  // Context
+  context        String   // "email", "campaign", "flow", "api"
+  campaignId     String?  @db.ObjectId
+  flowId         String?  @db.ObjectId
+  messageLogId   String?  @db.ObjectId
+
+  // Outcome tracking
+  clicked        Boolean  @default(true)
+  clickedAt      DateTime @default(now())
+  purchased      Boolean  @default(false)
+  purchasedAt    DateTime?
+  purchaseValue  Float?
+
+  @@index([customerId])
+  @@index([algorithm])
+  @@index([recommendedSku])
+  @@index([clickedAt])
+  @@index([purchased])
+}

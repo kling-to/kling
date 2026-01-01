@@ -1,0 +1,10 @@
+import express from 'express';
+import { asyncHandler } from '../utils/asyncHandler';
+import * as custCtrl from '../controllers/customersController';
+import { authenticate } from '../middlewares/auth';
+import { requireTenant } from '../middlewares/requireTenant';
+const router = express.Router();
+router.get('/', authenticate, requireTenant('tenantId'), asyncHandler(custCtrl.listCustomers));
+router.get('/:customerId', authenticate, asyncHandler(custCtrl.getCustomer));
+router.post('/:customerId/events', authenticate, asyncHandler(custCtrl.ingestCustomerEvent));
+export default router;

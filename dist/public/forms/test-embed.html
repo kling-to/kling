@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upsale Form Embed Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    h1 { color: #333; margin-bottom: 8px; }
+    .subtitle { color: #666; margin-bottom: 32px; }
+    .section {
+      margin: 24px 0;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+    .section h2 { margin-top: 0; color: #333; font-size: 16px; }
+    code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #1d4ed8; }
+    .form-target {
+      min-height: 100px;
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+    }
+    .logs {
+      max-height: 150px;
+      overflow-y: auto;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .log-entry { margin: 2px 0; }
+    .log-entry.error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>Form Embed Test</h1>
+  <p class="subtitle">Test the Upsale form embed script</p>
+
+  <div class="section">
+    <h2>Configuration</h2>
+    <input type="text" id="formId" value="6945b84b4f9dc2b3ddd5525f" placeholder="Enter form ID">
+    <br><br>
+    <button onclick="loadForm()">Load Form</button>
+  </div>
+
+  <div class="section">
+    <h2>Embedded Form</h2>
+    <div id="upsale-form-6945b84b4f9dc2b3ddd5525f" class="form-target">
+      Form will appear here after loading
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Console</h2>
+    <div id="logs" class="logs"></div>
+  </div>
+
+  <div class="section">
+    <h2>Integration Code</h2>
+    <pre>&lt;!-- 1. Add target div where you want the form --&gt;
+&lt;div id="upsale-form-YOUR_FORM_ID"&gt;&lt;/div&gt;
+
+&lt;!-- 2. Load embed script before &lt;/body&gt; --&gt;
+&lt;script src="http://localhost:3001/forms/embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  upsaleForms('init', {
+    apiUrl: 'http://localhost:3001/v1',
+    formId: 'YOUR_FORM_ID'
+  });
+&lt;/script&gt;</pre>
+  </div>
+
+  <script src="/forms/embed.js"></script>
+  <script>
+    const logsEl = document.getElementById('logs');
+
+    // Capture console
+    const origLog = console.log;
+    const origError = console.error;
+
+    function addLog(type, ...args) {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+      logsEl.appendChild(entry);
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    console.log = (...args) => { origLog.apply(console, args); addLog('info', ...args); };
+    console.error = (...args) => { origError.apply(console, args); addLog('error', ...args); };
+
+    function loadForm() {
+      const formId = document.getElementById('formId').value.trim();
+      if (!formId) {
+        console.error('Please enter a form ID');
+        return;
+      }
+
+      // Update target div ID
+      const target = document.querySelector('.form-target');
+      target.id = `upsale-form-${formId}`;
+      target.innerHTML = 'Loading...';
+
+      upsaleForms('init', {
+        apiUrl: 'http://localhost:3001/v1',
+        formId: formId
+      });
+    }
+
+    console.log('Test page ready');
+  </script>
+</body>
+</html>

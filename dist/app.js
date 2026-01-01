@@ -1,0 +1,35 @@
+import express from 'express';
+import morgan from 'morgan';
+import helmet from 'helmet';
+import cors from 'cors';
+import authRoutes from './routes/auth';
+import tenantRoutes from './routes/tenants';
+import userRoutes from './routes/users';
+import workflowRoutes from './routes/workflows';
+import customerRoutes from './routes/customers';
+import messageRoutes from './routes/messages';
+import vectorRoutes from './routes/vectors';
+import adminRoutes from './routes/admin';
+import webhookRoutes from './routes/webhooks';
+import healthRoutes from './routes/health';
+import { errorHandler, notFoundHandler } from './middlewares/errorHandlers';
+const app = express();
+app.use(helmet());
+app.use(cors());
+app.use(morgan('tiny'));
+app.use(express.json());
+// api v1 prefix
+app.use('/v1/auth', authRoutes);
+app.use('/v1/tenants', tenantRoutes);
+app.use('/v1/users', userRoutes);
+app.use('/v1/workflows', workflowRoutes);
+app.use('/v1/customers', customerRoutes);
+app.use('/v1/messages', messageRoutes);
+app.use('/v1/vectors', vectorRoutes);
+app.use('/v1/admin', adminRoutes);
+app.use('/v1/webhooks', webhookRoutes);
+app.use('/v1/health', healthRoutes);
+// not found + error handlers
+app.use(notFoundHandler);
+app.use(errorHandler);
+export default app;
