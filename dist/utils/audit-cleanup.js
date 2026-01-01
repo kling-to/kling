@@ -1,34 +1,15 @@
-/**
- * Audit Log Cleanup Utility
- *
- * Deletes audit logs older than the configured retention period.
- * Default retention: 7 days (1 week)
- * Minimum retention: 1 day (hard limit enforced in settings)
- */
 import prisma from './prisma';
-/**
- * Get the audit log retention period from settings
- * Returns the number of days to retain audit logs (minimum 1 day)
- */
 export async function getAuditLogRetentionDays() {
     const settings = await prisma.settings.findFirst();
-    const days = settings?.auditLogRetentionDays ?? 7; // Default to 7 days
-    return Math.max(1, days); // Enforce minimum of 1 day
+    const days = settings?.auditLogRetentionDays ?? 7;
+    return Math.max(1, days);
 }
-/**
- * Calculate the cutoff date for audit log cleanup
- * Logs older than this date will be deleted
- */
 export function calculateCutoffDate(retentionDays) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - retentionDays);
-    cutoff.setHours(0, 0, 0, 0); // Start of day for clean cutoff
+    cutoff.setHours(0, 0, 0, 0);
     return cutoff;
 }
-/**
- * Delete audit logs older than the retention period
- * Returns the number of deleted records
- */
 export async function cleanupAuditLogs() {
     try {
         const retentionDays = await getAuditLogRetentionDays();
@@ -58,9 +39,6 @@ export async function cleanupAuditLogs() {
         };
     }
 }
-/**
- * Get stats about audit logs for monitoring
- */
 export async function getAuditLogStats() {
     const retentionDays = await getAuditLogRetentionDays();
     const cutoffDate = calculateCutoffDate(retentionDays);

@@ -1,7 +1,3 @@
-/**
- * Wix Platform Adapter
- * Handles OAuth and data sync for Wix Stores
- */
 import crypto from 'crypto';
 const WIX_WEBHOOK_EVENTS = [
     'wix.contacts.v4.contact_created',
@@ -18,18 +14,12 @@ export class WixAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * Generate OAuth authorization URL
-     */
     getAuthUrl(_instanceId, redirectUri, state) {
         return (`https://www.wix.com/installer/install?` +
             `appId=${this.config.appId}` +
             `&redirectUrl=${encodeURIComponent(redirectUri)}` +
             `&state=${state}`);
     }
-    /**
-     * Exchange authorization code for access token
-     */
     async exchangeCodeForToken(instanceId, code, _redirectUri) {
         const response = await fetch('https://www.wixapis.com/oauth/access', {
             method: 'POST',
@@ -52,9 +42,6 @@ export class WixAdapter {
             scopes: this.config.scopes,
         };
     }
-    /**
-     * Refresh access token
-     */
     async refreshAccessToken(refreshToken) {
         const response = await fetch('https://www.wixapis.com/oauth/access', {
             method: 'POST',
@@ -77,30 +64,15 @@ export class WixAdapter {
             scopes: this.config.scopes,
         };
     }
-    /**
-     * Register webhooks - Wix uses app configuration for webhooks
-     */
     async registerWebhooks(_instanceId, _accessToken, _callbackUrl) {
-        // Wix webhooks are configured in the Wix Developers Center
-        // They cannot be programmatically registered
         return [];
     }
-    /**
-     * Unregister webhooks
-     */
     async unregisterWebhooks(_instanceId, _accessToken, _webhookIds) {
-        // Wix webhooks are configured in the Wix Developers Center
     }
-    /**
-     * Verify webhook signature
-     */
     verifyWebhook(rawBody, signature, secret) {
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers (contacts) from Wix
-     */
     async fetchCustomers(_instanceId, accessToken, cursor) {
         const limit = 100;
         const body = {
@@ -129,9 +101,6 @@ export class WixAdapter {
                 : undefined,
         };
     }
-    /**
-     * Fetch orders from Wix
-     */
     async fetchOrders(_instanceId, accessToken, cursor, _sinceDate) {
         const limit = 100;
         const body = {
@@ -160,9 +129,6 @@ export class WixAdapter {
                 : undefined,
         };
     }
-    /**
-     * Parse webhook payload
-     */
     parseWebhookPayload(topic, payload) {
         const data = payload;
         if (topic.includes('contact') && !topic.includes('deleted') && data.data) {
@@ -176,9 +142,6 @@ export class WixAdapter {
         }
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapContact(c) {
         const firstName = c.info?.name?.first || null;
         const lastName = c.info?.name?.last || null;
@@ -233,9 +196,6 @@ export class WixAdapter {
         };
     }
 }
-/**
- * Create Wix adapter
- */
 export function createWixAdapter(config) {
     return new WixAdapter({
         platform: 'WIX',

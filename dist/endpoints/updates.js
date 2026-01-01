@@ -1,10 +1,3 @@
-/**
- * System Update Endpoints
- *
- * Admin-only endpoints for managing system updates and rollbacks.
- * Fetches version information from the release repository and manages
- * update/rollback operations via BullMQ background jobs.
- */
 import { z } from 'zod';
 import { createAuthRoleFactory } from '../factories';
 import prisma from '../utils/prisma';
@@ -13,9 +6,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import createHttpError from 'http-errors';
-// Release repository configuration
 const RELEASE_REPO_RAW = 'https://raw.githubusercontent.com/kling-to/kling/main';
-// Helper to read package.json version
 function getCurrentVersion() {
     try {
         const packagePath = path.join(process.cwd(), 'package.json');
@@ -25,11 +16,9 @@ function getCurrentVersion() {
         }
     }
     catch {
-        // Fallback if package.json can't be read
     }
     return '1.0.0';
 }
-// Helper to get git information
 function getGitInfo() {
     try {
         const isGitRepo = fs.existsSync(path.join(process.cwd(), '.git'));
@@ -42,7 +31,6 @@ function getGitInfo() {
             sha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
         }
         catch {
-            // Not a git repo or no commits
         }
         try {
             tag = execSync('git describe --tags --exact-match 2>/dev/null', {
@@ -50,7 +38,6 @@ function getGitInfo() {
             }).trim();
         }
         catch {
-            // No tag at current commit
         }
         return { sha, tag, isGitRepo };
     }
@@ -58,7 +45,6 @@ function getGitInfo() {
         return { sha: null, tag: null, isGitRepo: false };
     }
 }
-// Version info schema for responses
 const versionInfoSchema = z.object({
     version: z.string(),
     tag: z.string(),
@@ -69,10 +55,6 @@ const versionInfoSchema = z.object({
     minVersion: z.string(),
     sha: z.string(),
 });
-/**
- * GET /v1/admin/updates/current
- * Returns the currently installed version information
- */
 export const getCurrentVersionEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Get Current Version',
@@ -91,7 +73,6 @@ export const getCurrentVersionEndpoint = createAuthRoleFactory('admin').build({
     handler: async () => {
         const version = getCurrentVersion();
         const { sha, tag, isGitRepo } = getGitInfo();
-        // Get installation date from settings (first record creation time)
         const settings = await prisma.settings.findFirst({
             select: { createdAt: true },
         });
@@ -106,10 +87,6 @@ export const getCurrentVersionEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * GET /v1/admin/updates/available
- * Fetches available versions from the release repository
- */
 export const getAvailableVersionsEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Get Available Versions',
@@ -124,13 +101,11 @@ export const getAvailableVersionsEndpoint = createAuthRoleFactory('admin').build
     }),
     handler: async () => {
         const currentVersion = getCurrentVersion();
-        // Fetch releases.json from GitHub
         const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
         if (!response.ok) {
             throw createHttpError(502, 'Failed to fetch release information from repository');
         }
         const releasesData = (await response.json());
-        // Compare versions (simple string comparison for semver)
         const isNewer = (a, b) => {
             const partsA = a.split('.').map(Number);
             const partsB = b.split('.').map(Number);
@@ -150,10 +125,6 @@ export const getAvailableVersionsEndpoint = createAuthRoleFactory('admin').build
         };
     },
 });
-/**
- * GET /v1/admin/updates/changelog/:version
- * Returns the detailed changelog for a specific version
- */
 export const getVersionChangelogEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Get Version Changelog',
@@ -176,17 +147,13 @@ export const getVersionChangelogEndpoint = createAuthRoleFactory('admin').build(
         return versionInfo;
     },
 });
-/**
- * POST /v1/admin/updates/install
- * Installs a specific version (or latest)
- */
 export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Install Update',
     description: 'Installs a specific version of Kling. This will restart the server.',
     tag: 'Updates',
     input: z.object({
-        version: z.string().optional(), // If not provided, install latest
+        version: z.string().optional(),
         skipBackup: z.boolean().optional().default(false),
     }),
     output: z.object({
@@ -198,12 +165,10 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
     handler: async ({ input, ctx }) => {
         const { version, skipBackup } = input;
         const targetVersion = version || 'latest';
-        // Validate we're in a git repository
         const { isGitRepo } = getGitInfo();
         if (!isGitRepo) {
             throw createHttpError(400, 'Not a git repository. Updates are only supported for git-based installations.');
         }
-        // Fetch version info to validate it exists
         const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
         if (!response.ok) {
             throw createHttpError(502, 'Failed to fetch release information');
@@ -214,7 +179,6 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
         if (!versionExists && targetVersion !== 'latest') {
             throw createHttpError(404, `Version ${targetVersion} not found`);
         }
-        // Create audit log
         await createAuditLog({
             action: AuditActions.systemUpdate.started,
             resourceType: 'system',
@@ -222,7 +186,6 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
             metadata: { targetVersion: resolvedVersion, skipBackup },
             context: extractAuditContext(ctx.request, ctx.user),
         });
-        // Queue update job
         const { queueUpdateJob } = await import('../utils/bullmq/update-worker');
         const jobId = await queueUpdateJob({
             version: resolvedVersion,
@@ -238,10 +201,6 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * POST /v1/admin/updates/rollback
- * Rollback to a previous version
- */
 export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Rollback Version',
@@ -259,12 +218,10 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
     }),
     handler: async ({ input, ctx }) => {
         const { version, skipBackup } = input;
-        // Validate we're in a git repository
         const { isGitRepo } = getGitInfo();
         if (!isGitRepo) {
             throw createHttpError(400, 'Not a git repository. Rollbacks are only supported for git-based installations.');
         }
-        // Fetch version info to validate it exists
         const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
         if (!response.ok) {
             throw createHttpError(502, 'Failed to fetch release information');
@@ -274,7 +231,6 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
         if (!versionExists) {
             throw createHttpError(404, `Version ${version} not found`);
         }
-        // Create audit log
         await createAuditLog({
             action: AuditActions.systemRollback.started,
             resourceType: 'system',
@@ -282,7 +238,6 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
             metadata: { version, skipBackup },
             context: extractAuditContext(ctx.request, ctx.user),
         });
-        // Queue rollback job
         const { queueUpdateJob } = await import('../utils/bullmq/update-worker');
         const jobId = await queueUpdateJob({
             version,
@@ -298,10 +253,6 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * GET /v1/admin/updates/history
- * Returns the history of system updates and rollbacks
- */
 export const getUpdateHistoryEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Update History',
@@ -390,10 +341,6 @@ export const getUpdateHistoryEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * GET /v1/admin/updates/status
- * Returns the current update job status (if any)
- */
 export const getUpdateStatusEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Get Update Status',

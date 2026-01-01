@@ -1,12 +1,3 @@
-/**
- * Product Recommendations Engine
- *
- * Implements multiple recommendation algorithms:
- * - Best Sellers: Top selling products (recency-weighted)
- * - Recently Viewed: Products customer browsed recently
- * - Collaborative Filtering: "Customers like you also bought"
- * - Copurchase: "Frequently bought together"
- */
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 export const DEFAULT_CONFIG = {
@@ -15,17 +6,12 @@ export const DEFAULT_CONFIG = {
     excludePurchased: true,
     fallbackToBestSellers: true,
 };
-/**
- * Get recommendations for a customer
- */
 export async function getRecommendations(customerId, algorithm, config = {}) {
     const mergedConfig = { ...DEFAULT_CONFIG, ...config };
-    // Check cache first
     const cached = await getCachedRecommendations(customerId, algorithm, mergedConfig.categoryFilter, mergedConfig.brandFilter);
     if (cached) {
         return cached;
     }
-    // Generate recommendations based on algorithm
     let result;
     switch (algorithm) {
         case 'best_sellers':
@@ -59,7 +45,6 @@ export async function getRecommendations(customerId, algorithm, config = {}) {
         default:
             result = await getBestSellers(mergedConfig);
     }
-    // Apply fallback if not enough recommendations
     if (result.recommendations.length < mergedConfig.limit &&
         mergedConfig.fallbackToBestSellers &&
         algorithm !== 'best_sellers') {
@@ -76,25 +61,17 @@ export async function getRecommendations(customerId, algorithm, config = {}) {
                 });
             }
         }
-        // Lower confidence when using fallback
         result.confidence = Math.min(result.confidence, 0.5);
     }
-    // Cache the result
     await cacheRecommendations(result, mergedConfig);
     return result;
 }
-/**
- * Best Sellers Algorithm
- * Returns top selling products weighted by recency
- */
 async function getBestSellers(config) {
     const lookbackDate = new Date();
     lookbackDate.setDate(lookbackDate.getDate() - config.lookbackDays);
-    // Aggregate order items to find best sellers
     const bestSellers = await prisma.$runCommandRaw({
         aggregate: 'OrderItem',
         pipeline: [
-            // Join with orders to filter by date
             {
                 $lookup: {
                     from: 'Order',
@@ -110,7 +87,6 @@ async function getBestSellers(config) {
                     'order.status': { $in: ['completed', 'pending'] },
                 },
             },
-            // Group by SKU
             {
                 $group: {
                     _id: '$sku',
@@ -123,7 +99,6 @@ async function getBestSellers(config) {
                     lastPurchased: { $max: '$order.purchasedAt' },
                 },
             },
-            // Calculate score with recency weighting
             {
                 $addFields: {
                     recencyWeight: {
@@ -131,7 +106,7 @@ async function getBestSellers(config) {
                             {
                                 $subtract: ['$lastPurchased', { $toDate: lookbackDate.toISOString() }],
                             },
-                            86400000 * config.lookbackDays, // Convert to days
+                            86400000 * config.lookbackDays,
                         ],
                     },
                 },
@@ -147,15 +122,13 @@ async function getBestSellers(config) {
                 },
             },
             { $sort: { score: -1 } },
-            { $limit: config.limit * 2 }, // Get extra to filter out excluded
+            { $limit: config.limit * 2 },
         ],
         cursor: {},
     });
     const cursor = bestSellers;
     const items = cursor.cursor?.firstBatch || [];
-    // Enrich with product catalog data
     const recommendations = await enrichWithProductData(items.slice(0, config.limit), 'Top seller in the last ' + config.lookbackDays + ' days');
-    // Apply filters
     const filtered = filterRecommendations(recommendations, config);
     return {
         customerId: null,
@@ -166,19 +139,13 @@ async function getBestSellers(config) {
         cached: false,
     };
 }
-/**
- * Recently Viewed Algorithm
- * Returns products the customer recently browsed
- */
 async function getRecentlyViewed(customerId, config) {
     const lookbackDate = new Date();
     lookbackDate.setDate(lookbackDate.getDate() - config.lookbackDays);
-    // Get customer's purchased SKUs if excluding
     let purchasedSkus = new Set();
     if (config.excludePurchased) {
         purchasedSkus = await getCustomerPurchasedSkus(customerId);
     }
-    // Get recent browse events
     const browseEvents = await prisma.browseEvent.findMany({
         where: {
             customerId,
@@ -187,10 +154,9 @@ async function getRecentlyViewed(customerId, config) {
             sku: { not: null },
         },
         orderBy: { occurredAt: 'desc' },
-        take: config.limit * 3, // Get more for deduplication and filtering
+        take: config.limit * 3,
         include: { product: true },
     });
-    // Deduplicate by SKU, keeping most recent
     const seenSkus = new Set();
     const uniqueEvents = browseEvents.filter((event) => {
         if (!event.sku || seenSkus.has(event.sku))
@@ -200,7 +166,6 @@ async function getRecentlyViewed(customerId, config) {
         seenSkus.add(event.sku);
         return true;
     });
-    // Map to recommendations
     const recommendations = uniqueEvents
         .slice(0, config.limit)
         .map((event, index) => ({
@@ -211,10 +176,9 @@ async function getRecentlyViewed(customerId, config) {
         price: event.product?.price || 0,
         imageUrl: event.product?.imageUrl || null,
         url: event.product?.url || null,
-        score: 1 - index * 0.1, // Decay score by position
+        score: 1 - index * 0.1,
         reason: event.eventType === 'added_to_cart' ? 'Left in your cart' : 'Recently viewed',
     }));
-    // Apply filters
     const filtered = filterRecommendations(recommendations, config);
     return {
         customerId,
@@ -225,14 +189,9 @@ async function getRecentlyViewed(customerId, config) {
         cached: false,
     };
 }
-/**
- * Collaborative Filtering Algorithm
- * "Customers who bought X also bought Y"
- */
 async function getCollaborativeFiltering(customerId, config) {
     const lookbackDate = new Date();
     lookbackDate.setDate(lookbackDate.getDate() - config.lookbackDays);
-    // Get customer's purchase history
     const customerOrders = await prisma.order.findMany({
         where: {
             customerId,
@@ -240,7 +199,7 @@ async function getCollaborativeFiltering(customerId, config) {
         },
         include: { items: true },
         orderBy: { purchasedAt: 'desc' },
-        take: 20, // Last 20 orders
+        take: 20,
     });
     if (customerOrders.length === 0) {
         return {
@@ -252,20 +211,16 @@ async function getCollaborativeFiltering(customerId, config) {
             cached: false,
         };
     }
-    // Get SKUs this customer bought
     const customerSkus = new Set();
     for (const order of customerOrders) {
         for (const item of order.items) {
             customerSkus.add(item.sku);
         }
     }
-    // Find similar customers (who bought similar products)
     const similarCustomerResult = await prisma.$runCommandRaw({
         aggregate: 'OrderItem',
         pipeline: [
-            // Match items from customer's purchased SKUs
             { $match: { sku: { $in: Array.from(customerSkus) } } },
-            // Join with orders
             {
                 $lookup: {
                     from: 'Order',
@@ -275,14 +230,12 @@ async function getCollaborativeFiltering(customerId, config) {
                 },
             },
             { $unwind: '$order' },
-            // Exclude current customer
             {
                 $match: {
                     'order.customerId': { $ne: { $oid: customerId } },
                     'order.purchasedAt': { $gte: lookbackDate },
                 },
             },
-            // Group by customer
             {
                 $group: {
                     _id: '$order.customerId',
@@ -290,7 +243,6 @@ async function getCollaborativeFiltering(customerId, config) {
                     matchCount: { $sum: 1 },
                 },
             },
-            // Find customers with high overlap
             { $match: { matchCount: { $gte: 2 } } },
             { $sort: { matchCount: -1 } },
             { $limit: 50 },
@@ -309,11 +261,9 @@ async function getCollaborativeFiltering(customerId, config) {
             cached: false,
         };
     }
-    // Get products bought by similar customers but not by this customer
     const recommendedResult = await prisma.$runCommandRaw({
         aggregate: 'OrderItem',
         pipeline: [
-            // Join with orders
             {
                 $lookup: {
                     from: 'Order',
@@ -323,7 +273,6 @@ async function getCollaborativeFiltering(customerId, config) {
                 },
             },
             { $unwind: '$order' },
-            // Match similar customers' orders
             {
                 $match: {
                     'order.customerId': {
@@ -332,7 +281,6 @@ async function getCollaborativeFiltering(customerId, config) {
                     sku: { $nin: Array.from(customerSkus) },
                 },
             },
-            // Group by SKU
             {
                 $group: {
                     _id: '$sku',
@@ -343,7 +291,6 @@ async function getCollaborativeFiltering(customerId, config) {
                     customerCount: { $addToSet: '$order.customerId' },
                 },
             },
-            // Score by number of similar customers who bought
             {
                 $addFields: {
                     score: { $size: '$customerCount' },
@@ -356,9 +303,7 @@ async function getCollaborativeFiltering(customerId, config) {
     });
     const recommendedCursor = recommendedResult;
     const recommended = recommendedCursor.cursor?.firstBatch || [];
-    // Enrich with product catalog data
     const recommendations = await enrichWithProductData(recommended.slice(0, config.limit), 'Customers with similar tastes also bought this');
-    // Apply filters
     const filtered = filterRecommendations(recommendations, config);
     return {
         customerId,
@@ -369,12 +314,7 @@ async function getCollaborativeFiltering(customerId, config) {
         cached: false,
     };
 }
-/**
- * Copurchase Algorithm
- * "Frequently bought together"
- */
 async function getCopurchaseRecommendations(customerId, config) {
-    // Get customer's recent purchases
     const recentOrders = await prisma.order.findMany({
         where: {
             customerId,
@@ -382,7 +322,7 @@ async function getCopurchaseRecommendations(customerId, config) {
         },
         include: { items: true },
         orderBy: { purchasedAt: 'desc' },
-        take: 5, // Last 5 orders
+        take: 5,
     });
     if (recentOrders.length === 0) {
         return {
@@ -394,18 +334,16 @@ async function getCopurchaseRecommendations(customerId, config) {
             cached: false,
         };
     }
-    // Get SKUs from recent orders
     const recentSkus = new Set();
     for (const order of recentOrders) {
         for (const item of order.items) {
             recentSkus.add(item.sku);
         }
     }
-    // Get copurchase patterns for these SKUs
     const patterns = await prisma.copurchasePattern.findMany({
         where: {
             sourceSku: { in: Array.from(recentSkus) },
-            copurchaseRate: { gte: 0.1 }, // At least 10% copurchase rate
+            copurchaseRate: { gte: 0.1 },
         },
         orderBy: [{ copurchaseRate: 'desc' }, { copurchaseCount: 'desc' }],
         take: config.limit * 2,
@@ -420,7 +358,6 @@ async function getCopurchaseRecommendations(customerId, config) {
             cached: false,
         };
     }
-    // Get product details for recommended SKUs
     const recommendedSkus = [...new Set(patterns.map((p) => p.recommendedSku))];
     const products = await prisma.product.findMany({
         where: {
@@ -430,7 +367,6 @@ async function getCopurchaseRecommendations(customerId, config) {
         },
     });
     const productMap = new Map(products.map((p) => [p.sku, p]));
-    // Build recommendations
     const recommendations = patterns
         .filter((p) => productMap.has(p.recommendedSku))
         .slice(0, config.limit)
@@ -448,7 +384,6 @@ async function getCopurchaseRecommendations(customerId, config) {
             reason: 'Frequently bought together',
         };
     });
-    // Apply filters and exclude already purchased
     let filtered = filterRecommendations(recommendations, config);
     if (config.excludePurchased) {
         const purchasedSkus = await getCustomerPurchasedSkus(customerId);
@@ -463,12 +398,7 @@ async function getCopurchaseRecommendations(customerId, config) {
         cached: false,
     };
 }
-/**
- * Content-Based Algorithm
- * Similar products based on attributes
- */
 async function getContentBased(customerId, config) {
-    // Get customer's favorite categories and brands
     const customerOrders = await prisma.order.findMany({
         where: { customerId, status: { in: ['completed', 'pending'] } },
         include: { items: true },
@@ -484,7 +414,6 @@ async function getContentBased(customerId, config) {
             cached: false,
         };
     }
-    // Count category and brand preferences
     const categoryCount = new Map();
     const brandCount = new Map();
     const purchasedSkus = new Set();
@@ -499,7 +428,6 @@ async function getContentBased(customerId, config) {
             }
         }
     }
-    // Get top categories and brands
     const topCategories = [...categoryCount.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
@@ -508,7 +436,6 @@ async function getContentBased(customerId, config) {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([brand]) => brand);
-    // Find similar products
     const products = await prisma.product.findMany({
         where: {
             isActive: true,
@@ -516,10 +443,9 @@ async function getContentBased(customerId, config) {
             sku: { notIn: config.excludePurchased ? Array.from(purchasedSkus) : [] },
             OR: [{ category: { in: topCategories } }, { brand: { in: topBrands } }],
         },
-        orderBy: { price: 'desc' }, // Prefer higher-value items
+        orderBy: { price: 'desc' },
         take: config.limit * 2,
     });
-    // Score by preference match
     const recommendations = products
         .map((product) => {
         let score = 0;
@@ -546,7 +472,6 @@ async function getContentBased(customerId, config) {
     })
         .sort((a, b) => b.score - a.score)
         .slice(0, config.limit);
-    // Apply filters
     const filtered = filterRecommendations(recommendations, config);
     return {
         customerId,
@@ -557,19 +482,13 @@ async function getContentBased(customerId, config) {
         cached: false,
     };
 }
-/**
- * Personalized Mix Algorithm
- * Combines multiple algorithms for diverse recommendations
- */
 async function getPersonalizedMix(customerId, config) {
-    // Get recommendations from multiple sources
     const [recentlyViewed, collaborative, copurchase, bestSellers] = await Promise.all([
         getRecentlyViewed(customerId, { ...config, limit: 2 }),
         getCollaborativeFiltering(customerId, { ...config, limit: 2 }),
         getCopurchaseRecommendations(customerId, { ...config, limit: 2 }),
         getBestSellers({ ...config, limit: 2 }),
     ]);
-    // Merge and deduplicate
     const seenSkus = new Set();
     const mixed = [];
     const sources = [recentlyViewed, collaborative, copurchase, bestSellers];
@@ -581,9 +500,7 @@ async function getPersonalizedMix(customerId, config) {
             }
         }
     }
-    // Sort by score and take limit
     const sorted = mixed.sort((a, b) => b.score - a.score).slice(0, config.limit);
-    // Calculate average confidence
     const avgConfidence = sources.reduce((sum, s) => sum + s.confidence, 0) / sources.length;
     return {
         customerId,
@@ -594,7 +511,6 @@ async function getPersonalizedMix(customerId, config) {
         cached: false,
     };
 }
-// Helper: Get customer's purchased SKUs
 async function getCustomerPurchasedSkus(customerId) {
     const orders = await prisma.order.findMany({
         where: { customerId },
@@ -608,7 +524,6 @@ async function getCustomerPurchasedSkus(customerId) {
     }
     return skus;
 }
-// Helper: Enrich aggregation results with product data
 async function enrichWithProductData(items, defaultReason) {
     const skus = items.map((i) => i._id);
     const products = await prisma.product.findMany({
@@ -631,7 +546,6 @@ async function enrichWithProductData(items, defaultReason) {
         };
     });
 }
-// Helper: Filter recommendations by category/brand
 function filterRecommendations(recommendations, config) {
     return recommendations.filter((r) => {
         if (config.categoryFilter && r.category !== config.categoryFilter) {
@@ -643,7 +557,6 @@ function filterRecommendations(recommendations, config) {
         return true;
     });
 }
-// Cache helpers
 async function getCachedRecommendations(customerId, algorithm, categoryFilter, brandFilter) {
     const cached = await prisma.recommendationCache.findFirst({
         where: {
@@ -666,13 +579,11 @@ async function getCachedRecommendations(customerId, algorithm, categoryFilter, b
     };
 }
 async function cacheRecommendations(result, config) {
-    // Skip caching if no customer ID (except for best_sellers)
     if (!result.customerId && result.algorithm !== 'best_sellers')
         return;
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1); // Cache for 1 hour
+    expiresAt.setHours(expiresAt.getHours() + 1);
     try {
-        // Find existing cache entry
         const existing = await prisma.recommendationCache.findFirst({
             where: {
                 customerId: result.customerId ?? null,
@@ -707,17 +618,11 @@ async function cacheRecommendations(result, config) {
         }
     }
     catch {
-        // Ignore cache errors
     }
 }
-/**
- * Update copurchase patterns from order data
- * Call this periodically (e.g., nightly) to rebuild patterns
- */
 export async function updateCopurchasePatterns() {
     const lookbackDate = new Date();
     lookbackDate.setDate(lookbackDate.getDate() - 90);
-    // Find orders with multiple items
     const orders = await prisma.order.findMany({
         where: {
             purchasedAt: { gte: lookbackDate },
@@ -727,7 +632,6 @@ export async function updateCopurchasePatterns() {
             items: { select: { sku: true, quantity: true } },
         },
     });
-    // Build co-purchase counts
     const patterns = new Map();
     const skuOrderCounts = new Map();
     const thirtyDaysAgo = new Date();
@@ -737,11 +641,9 @@ export async function updateCopurchasePatterns() {
             continue;
         const skus = order.items.map((i) => i.sku);
         const isRecent = order.purchasedAt >= thirtyDaysAgo;
-        // Update individual SKU counts
         for (const sku of skus) {
             skuOrderCounts.set(sku, (skuOrderCounts.get(sku) || 0) + 1);
         }
-        // Create pairs
         for (let i = 0; i < skus.length; i++) {
             for (let j = i + 1; j < skus.length; j++) {
                 const key = [skus[i], skus[j]].sort().join('|');
@@ -758,17 +660,14 @@ export async function updateCopurchasePatterns() {
             }
         }
     }
-    // Upsert patterns
     let created = 0;
     let updated = 0;
     for (const [key, data] of patterns) {
         const [skuA, skuB] = key.split('|');
         const countA = skuOrderCounts.get(skuA) || 1;
         const countB = skuOrderCounts.get(skuB) || 1;
-        // Calculate rates for both directions
         const rateAtoB = data.count / countA;
         const rateBtoA = data.count / countB;
-        // Create bidirectional patterns
         for (const [source, recommended, rate] of [
             [skuA, skuB, rateAtoB],
             [skuB, skuA, rateBtoA],
@@ -801,15 +700,11 @@ export async function updateCopurchasePatterns() {
                     updated++;
             }
             catch {
-                // Ignore constraint errors
             }
         }
     }
     return { patternsCreated: created, patternsUpdated: updated };
 }
-/**
- * Generate recommendations HTML for email templates
- */
 export function generateRecommendationsHtml(recommendations, options = {}) {
     const { columns = 3, showPrice = true, showReason = false, buttonText = 'Shop Now' } = options;
     if (recommendations.length === 0) {
@@ -829,7 +724,6 @@ export function generateRecommendationsHtml(recommendations, options = {}) {
     </td>
   `)
         .join('');
-    // Split into rows
     const rows = [];
     for (let i = 0; i < recommendations.length; i += columns) {
         const rowItems = itemsHtml

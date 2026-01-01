@@ -1,7 +1,3 @@
-/**
- * Magento (Adobe Commerce) Platform Adapter
- * Handles OAuth and data sync for Magento 2 stores
- */
 import crypto from 'crypto';
 const MAGENTO_WEBHOOK_EVENTS = [
     'customer_save_after',
@@ -15,25 +11,10 @@ export class MagentoAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * Generate OAuth 1.0a authorization URL
-     * Note: Magento 2 typically uses Integration tokens (Admin > System > Integrations)
-     * This implements the OAuth 1.0a flow for custom apps
-     */
     getAuthUrl(baseUrl, _redirectUri, _state) {
-        // Magento 2 typically uses admin-generated integration tokens
-        // OAuth 1.0a flow is more complex and rarely used
         return `${baseUrl}/admin/integration`;
     }
-    /**
-     * Exchange authorization for access token
-     * For Magento, we typically receive integration tokens directly
-     */
     async exchangeCodeForToken(baseUrl, code, _redirectUri) {
-        // Magento integration tokens are generated in admin panel
-        // The 'code' here would be the integration token
-        // For OAuth 1.0a flow, this would involve token exchange
-        // Verify the token works
         const response = await fetch(`${baseUrl}/rest/V1/store/storeConfigs`, {
             headers: {
                 Authorization: `Bearer ${code}`,
@@ -48,30 +29,15 @@ export class MagentoAdapter {
             scopes: ['customers', 'orders', 'products'],
         };
     }
-    /**
-     * Register webhooks - Magento uses observers/plugins configured via module
-     */
     async registerWebhooks(_baseUrl, _accessToken, _callbackUrl) {
-        // Magento webhooks require custom module installation
-        // Configure via System > Webhooks or custom module
         return [];
     }
-    /**
-     * Unregister webhooks
-     */
     async unregisterWebhooks(_baseUrl, _accessToken, _webhookIds) {
-        // Managed via Magento admin
     }
-    /**
-     * Verify webhook signature
-     */
     verifyWebhook(rawBody, signature, secret) {
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers from Magento
-     */
     async fetchCustomers(baseUrl, accessToken, cursor) {
         const pageSize = 100;
         const currentPage = cursor ? parseInt(cursor, 10) : 1;
@@ -99,9 +65,6 @@ export class MagentoAdapter {
             cursor: hasMore ? String(currentPage + 1) : undefined,
         };
     }
-    /**
-     * Fetch orders from Magento
-     */
     async fetchOrders(baseUrl, accessToken, cursor, sinceDate) {
         const pageSize = 100;
         const currentPage = cursor ? parseInt(cursor, 10) : 1;
@@ -134,9 +97,6 @@ export class MagentoAdapter {
             cursor: hasMore ? String(currentPage + 1) : undefined,
         };
     }
-    /**
-     * Parse webhook payload
-     */
     parseWebhookPayload(topic, payload) {
         const data = payload;
         if (topic.includes('customer') && !topic.includes('delete') && data.customer) {
@@ -147,9 +107,6 @@ export class MagentoAdapter {
         }
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapCustomer(c) {
         const name = [c.firstname, c.lastname].filter(Boolean).join(' ') || null;
         const primaryAddress = c.addresses?.[0];
@@ -192,7 +149,7 @@ export class MagentoAdapter {
             status,
             couponCode: o.coupon_code || null,
             items: o.items
-                .filter((item) => item.product_type !== 'configurable') // Skip parent configurables
+                .filter((item) => item.product_type !== 'configurable')
                 .map((item) => ({
                 sku: item.sku,
                 name: item.name,
@@ -207,9 +164,6 @@ export class MagentoAdapter {
         };
     }
 }
-/**
- * Create Magento adapter with Integration token
- */
 export function createMagentoAdapter(config) {
     return new MagentoAdapter({
         platform: 'MAGENTO',

@@ -1,37 +1,12 @@
-/**
- * Promotion Utility Functions
- *
- * These utilities are used for:
- * - Generating promo codes
- * - Formatting discount/gift values for display
- *
- * Note: With promotions merged into campaigns, campaign execution
- * handles most promotion operations directly.
- */
 import crypto from 'crypto';
-// =============================================================================
-// CODE GENERATION
-// =============================================================================
-/**
- * Generate a unique discount code
- */
 export function generateDiscountCode(prefix = 'SAVE') {
     const random = crypto.randomBytes(4).toString('hex').toUpperCase();
     return `${prefix}${random}`;
 }
-/**
- * Generate a unique gift code for a customer
- */
 export function generateGiftCode(prefix = 'GIFT') {
     const random = crypto.randomBytes(6).toString('hex').toUpperCase();
     return `${prefix}-${random}`;
 }
-// =============================================================================
-// VALUE FORMATTING
-// =============================================================================
-/**
- * Calculate discount amount for display
- */
 export function formatDiscountValue(type, value) {
     switch (type) {
         case 'percentage':
@@ -44,9 +19,6 @@ export function formatDiscountValue(type, value) {
             return `${value}`;
     }
 }
-/**
- * Format gift type for display
- */
 export function formatGiftValue(type, sku, value) {
     switch (type) {
         case 'free_sku':

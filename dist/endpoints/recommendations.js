@@ -1,20 +1,12 @@
-/**
- * Product Recommendations Endpoints
- *
- * API endpoints for getting personalized product recommendations.
- * This is a COMPETITIVE ADVANTAGE over Klaviyo (which has no recommendations API).
- */
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { authFactory, createAuthRoleFactory } from '../factories';
 import { objectIdSchema } from '../utils/validation';
 import { getRecommendations, updateCopurchasePatterns, generateRecommendationsHtml, DEFAULT_CONFIG, } from '../utils/recommendation-engine';
 const prisma = new PrismaClient();
-// Role factories
 const staffFactory = createAuthRoleFactory('admin', 'manager', 'staff');
 const managerFactory = createAuthRoleFactory('admin', 'manager');
 const adminFactory = createAuthRoleFactory('admin');
-// Common schemas
 const algorithmSchema = z.enum([
     'best_sellers',
     'recently_viewed',
@@ -34,10 +26,6 @@ const recommendationItemSchema = z.object({
     score: z.number(),
     reason: z.string(),
 });
-// -------------------------------------------------------------------
-// GET /v1/recommendations/:customerId
-// Get product recommendations for a specific customer
-// -------------------------------------------------------------------
 export const getCustomerRecommendationsEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Customer Recommendations',
@@ -61,7 +49,6 @@ export const getCustomerRecommendationsEndpoint = staffFactory.build({
         cached: z.boolean(),
     }),
     handler: async ({ input }) => {
-        // Verify customer exists
         const customer = await prisma.customer.findUnique({
             where: { id: input.customerId },
         });
@@ -86,10 +73,6 @@ export const getCustomerRecommendationsEndpoint = staffFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// GET /v1/recommendations/best-sellers
-// Get global best sellers (no customer required)
-// -------------------------------------------------------------------
 export const getBestSellersEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Best Sellers',
@@ -108,8 +91,7 @@ export const getBestSellersEndpoint = staffFactory.build({
         generatedAt: z.string(),
     }),
     handler: async ({ input }) => {
-        const result = await getRecommendations(null, // Null customer ID for global recommendations
-        'best_sellers', {
+        const result = await getRecommendations(null, 'best_sellers', {
             limit: input.limit,
             lookbackDays: input.lookbackDays,
             excludePurchased: false,
@@ -125,10 +107,6 @@ export const getBestSellersEndpoint = staffFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/recommendations/:customerId/html
-// Generate HTML recommendations block for emails
-// -------------------------------------------------------------------
 export const generateRecommendationsHtmlEndpoint = staffFactory.build({
     method: 'post',
     shortDescription: 'Generate Recommendations HTML',
@@ -175,10 +153,6 @@ export const generateRecommendationsHtmlEndpoint = staffFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/recommendations/track-click
-// Track when a customer clicks a recommendation
-// -------------------------------------------------------------------
 export const trackRecommendationClickEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Track Recommendation Click',
@@ -219,10 +193,6 @@ export const trackRecommendationClickEndpoint = authFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/recommendations/track-purchase
-// Track when a clicked recommendation leads to purchase
-// -------------------------------------------------------------------
 export const trackRecommendationPurchaseEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Track Recommendation Purchase',
@@ -247,10 +217,6 @@ export const trackRecommendationPurchaseEndpoint = authFactory.build({
         return { success: true };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/recommendations/rebuild-patterns
-// Rebuild copurchase patterns from order data (admin only)
-// -------------------------------------------------------------------
 export const rebuildCopurchasePatternsEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Rebuild Copurchase Patterns',
@@ -271,10 +237,6 @@ export const rebuildCopurchasePatternsEndpoint = adminFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// GET /v1/recommendations/analytics
-// Get recommendation performance analytics
-// -------------------------------------------------------------------
 export const getRecommendationAnalyticsEndpoint = managerFactory.build({
     method: 'get',
     shortDescription: 'Get Recommendation Analytics',
@@ -317,7 +279,6 @@ export const getRecommendationAnalyticsEndpoint = managerFactory.build({
         if (input.algorithm) {
             algorithmFilter.algorithm = input.algorithm;
         }
-        // Get overall stats
         const clicks = await prisma.recommendationClick.findMany({
             where: { ...dateFilter, ...algorithmFilter },
         });
@@ -327,7 +288,6 @@ export const getRecommendationAnalyticsEndpoint = managerFactory.build({
         const totalRevenue = purchases.reduce((sum, p) => sum + (p.purchaseValue || 0), 0);
         const purchaseRate = totalClicks > 0 ? totalPurchases / totalClicks : 0;
         const avgPosition = totalClicks > 0 ? clicks.reduce((sum, c) => sum + c.position, 0) / totalClicks : 0;
-        // Group by algorithm
         const byAlgorithmMap = new Map();
         for (const click of clicks) {
             const key = click.algorithm;
@@ -350,7 +310,6 @@ export const getRecommendationAnalyticsEndpoint = managerFactory.build({
             purchaseRate: data.clicks > 0 ? data.purchases / data.clicks : 0,
             revenue: data.revenue,
         }));
-        // Top products
         const byProductMap = new Map();
         for (const click of clicks) {
             const key = click.recommendedSku;
@@ -386,10 +345,6 @@ export const getRecommendationAnalyticsEndpoint = managerFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// Products CRUD (for product catalog management)
-// -------------------------------------------------------------------
-// List products
 export const listProductsEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'List Products',
@@ -475,7 +430,6 @@ export const listProductsEndpoint = staffFactory.build({
         };
     },
 });
-// Upsert product
 export const upsertProductEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Create or Update Product',
@@ -581,7 +535,6 @@ export const upsertProductEndpoint = managerFactory.build({
         };
     },
 });
-// Delete product
 export const deleteProductEndpoint = adminFactory.build({
     method: 'delete',
     shortDescription: 'Delete Product',
@@ -600,9 +553,6 @@ export const deleteProductEndpoint = adminFactory.build({
         return { success: true };
     },
 });
-// -------------------------------------------------------------------
-// Browse Events (for tracking customer behavior)
-// -------------------------------------------------------------------
 export const trackBrowseEventEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Track Browse Event',
@@ -631,7 +581,6 @@ export const trackBrowseEventEndpoint = authFactory.build({
         eventId: z.string(),
     }),
     handler: async ({ input }) => {
-        // Look up product ID if SKU provided
         let productId = input.productId;
         if (input.sku && !productId) {
             const product = await prisma.product.findUnique({
@@ -659,7 +608,6 @@ export const trackBrowseEventEndpoint = authFactory.build({
         };
     },
 });
-// Get unique categories (for filtering)
 export const getProductCategoriesEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Product Categories',
@@ -682,7 +630,6 @@ export const getProductCategoriesEndpoint = staffFactory.build({
         return { categories };
     },
 });
-// Get unique brands (for filtering)
 export const getProductBrandsEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Product Brands',

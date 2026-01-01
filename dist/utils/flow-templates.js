@@ -1,20 +1,6 @@
-/**
- * Flow Templates Library
- *
- * Preset flow templates that users can customize and deploy.
- * These templates follow best practices from Klaviyo and other marketing automation platforms.
- * Updated to use React Flow compatible structure.
- */
-// Node spacing constants
 const NODE_VERTICAL_SPACING = 120;
 const NODE_START_X = 250;
 const NODE_START_Y = 50;
-/**
- * Abandoned Cart Recovery Flow
- *
- * Triggers when a customer abandons their cart.
- * Sends email reminders with escalating urgency.
- */
 const abandonedCartTemplate = {
     id: 'abandoned-cart-recovery',
     name: 'Abandoned Cart Recovery',
@@ -131,12 +117,6 @@ const abandonedCartTemplate = {
         ],
     },
 };
-/**
- * Welcome Series Flow
- *
- * Triggers when a customer joins a list/newsletter.
- * Introduces the brand and encourages first purchase.
- */
 const welcomeSeriesTemplate = {
     id: 'welcome-series',
     name: 'Welcome Series',
@@ -242,12 +222,6 @@ const welcomeSeriesTemplate = {
         ],
     },
 };
-/**
- * Post-Purchase Follow-Up Flow
- *
- * Triggers when a customer places an order.
- * Thanks them and requests a review.
- */
 const postPurchaseTemplate = {
     id: 'post-purchase-followup',
     name: 'Post-Purchase Follow-Up',
@@ -353,12 +327,6 @@ const postPurchaseTemplate = {
         ],
     },
 };
-/**
- * Win-Back Campaign Flow
- *
- * Triggers based on custom event (typically scheduled job for inactive customers).
- * Re-engages customers who haven't purchased in a while.
- */
 const winBackTemplate = {
     id: 'win-back-campaign',
     name: 'Win-Back Campaign',
@@ -464,12 +432,6 @@ const winBackTemplate = {
         ],
     },
 };
-/**
- * Order Fulfillment Notification Flow
- *
- * Triggers when an order is fulfilled/shipped.
- * Keeps customers informed about their delivery.
- */
 const orderFulfillmentTemplate = {
     id: 'order-fulfillment',
     name: 'Order Fulfillment Notification',
@@ -549,12 +511,6 @@ const orderFulfillmentTemplate = {
         ],
     },
 };
-/**
- * Browse Abandonment Recovery Flow
- *
- * Triggers when a customer views a product but doesn't add to cart.
- * Sends reminder email with product details.
- */
 const browseAbandonmentTemplate = {
     id: 'browse-abandonment-recovery',
     name: 'Browse Abandonment Recovery',
@@ -670,12 +626,6 @@ The Team`,
         ],
     },
 };
-/**
- * Birthday/Anniversary Campaign Flow
- *
- * Triggers on custom event for customer birthday.
- * Sends birthday wishes with special discount.
- */
 const birthdayCampaignTemplate = {
     id: 'birthday-campaign',
     name: 'Birthday Campaign',
@@ -755,11 +705,6 @@ const birthdayCampaignTemplate = {
         ],
     },
 };
-/**
- * Review Request Flow
- *
- * Dedicated flow for requesting product reviews after delivery.
- */
 const reviewRequestTemplate = {
     id: 'review-request',
     name: 'Review Request',
@@ -850,11 +795,6 @@ const reviewRequestTemplate = {
         ],
     },
 };
-/**
- * Back in Stock Alert Flow
- *
- * Notifies customers when a previously out-of-stock product is available.
- */
 const backInStockTemplate = {
     id: 'back-in-stock',
     name: 'Back in Stock Alert',
@@ -934,11 +874,6 @@ const backInStockTemplate = {
         ],
     },
 };
-/**
- * Price Drop Alert Flow
- *
- * Notifies customers when a product they viewed drops in price.
- */
 const priceDropTemplate = {
     id: 'price-drop-alert',
     name: 'Price Drop Alert',
@@ -1018,11 +953,6 @@ const priceDropTemplate = {
         ],
     },
 };
-/**
- * Double Opt-in Confirmation Flow
- *
- * Confirms email subscription with a confirmation link.
- */
 const doubleOptInTemplate = {
     id: 'double-opt-in',
     name: 'Double Opt-in Confirmation',
@@ -1102,11 +1032,6 @@ const doubleOptInTemplate = {
         ],
     },
 };
-/**
- * Subscription Started Flow
- *
- * Welcomes new subscribers and sets expectations.
- */
 const subscriptionStartedTemplate = {
     id: 'subscription-started',
     name: 'Subscription Started',
@@ -1212,11 +1137,6 @@ const subscriptionStartedTemplate = {
         ],
     },
 };
-/**
- * Subscription Cancelled Flow
- *
- * Win-back flow for cancelled subscribers.
- */
 const subscriptionCancelledTemplate = {
     id: 'subscription-cancelled',
     name: 'Subscription Cancelled',
@@ -1322,11 +1242,6 @@ const subscriptionCancelledTemplate = {
         ],
     },
 };
-/**
- * Reorder Reminder Flow
- *
- * Reminds customers to reorder consumable products.
- */
 const reorderReminderTemplate = {
     id: 'reorder-reminder',
     name: 'Reorder Reminder',
@@ -1401,11 +1316,6 @@ const reorderReminderTemplate = {
         ],
     },
 };
-/**
- * VIP Customer Recognition Flow
- *
- * Recognizes and rewards top customers.
- */
 const vipRecognitionTemplate = {
     id: 'vip-recognition',
     name: 'VIP Customer Recognition',
@@ -1456,11 +1366,6 @@ const vipRecognitionTemplate = {
         ],
     },
 };
-/**
- * Loyalty Milestone Flow
- *
- * Celebrates customer loyalty milestones.
- */
 const loyaltyMilestoneTemplate = {
     id: 'loyalty-milestone',
     name: 'Loyalty Milestone',
@@ -1511,11 +1416,6 @@ const loyaltyMilestoneTemplate = {
         ],
     },
 };
-/**
- * Lead Magnet Delivery Flow
- *
- * Delivers lead magnets (ebooks, guides, etc.) and nurtures new leads.
- */
 const leadMagnetTemplate = {
     id: 'lead-magnet-delivery',
     name: 'Lead Magnet Delivery',
@@ -1621,11 +1521,6 @@ const leadMagnetTemplate = {
         ],
     },
 };
-/**
- * Referral Program Flow
- *
- * Promotes referral program and tracks referrals.
- */
 const referralProgramTemplate = {
     id: 'referral-program',
     name: 'Referral Program Welcome',
@@ -1705,11 +1600,6 @@ const referralProgramTemplate = {
         ],
     },
 };
-/**
- * Payment Failed Flow
- *
- * Handles failed payments for subscriptions or orders.
- */
 const paymentFailedTemplate = {
     id: 'payment-failed',
     name: 'Payment Failed Recovery',
@@ -1815,11 +1705,6 @@ const paymentFailedTemplate = {
         ],
     },
 };
-/**
- * Flash Sale Notification Flow
- *
- * Promotes limited-time flash sales.
- */
 const flashSaleTemplate = {
     id: 'flash-sale',
     name: 'Flash Sale Notification',
@@ -1899,11 +1784,6 @@ const flashSaleTemplate = {
         ],
     },
 };
-/**
- * New Product Launch Flow
- *
- * Announces new product launches to subscribers.
- */
 const newProductLaunchTemplate = {
     id: 'new-product-launch',
     name: 'New Product Launch',
@@ -1983,11 +1863,6 @@ const newProductLaunchTemplate = {
         ],
     },
 };
-/**
- * Feedback Request Flow
- *
- * Collects customer feedback and NPS scores.
- */
 const feedbackRequestTemplate = {
     id: 'feedback-request',
     name: 'Feedback Request',
@@ -2062,11 +1937,6 @@ const feedbackRequestTemplate = {
         ],
     },
 };
-/**
- * Seasonal Re-engagement Flow
- *
- * Re-engages customers during key shopping seasons.
- */
 const seasonalReengagementTemplate = {
     id: 'seasonal-reengagement',
     name: 'Seasonal Re-engagement',
@@ -2141,11 +2011,6 @@ const seasonalReengagementTemplate = {
         ],
     },
 };
-/**
- * Cross-sell Recommendation Flow
- *
- * Recommends complementary products after purchase.
- */
 const crossSellTemplate = {
     id: 'cross-sell-recommendation',
     name: 'Cross-sell Recommendation',
@@ -2236,11 +2101,6 @@ const crossSellTemplate = {
         ],
     },
 };
-/**
- * Educational Drip Series Flow
- *
- * Educates customers about products or topics.
- */
 const educationalDripTemplate = {
     id: 'educational-drip',
     name: 'Educational Drip Series',
@@ -2348,11 +2208,6 @@ const educationalDripTemplate = {
         ],
     },
 };
-/**
- * Low Stock Alert Flow
- *
- * Creates urgency for low stock items.
- */
 const lowStockAlertTemplate = {
     id: 'low-stock-alert',
     name: 'Low Stock Alert',
@@ -2403,11 +2258,6 @@ const lowStockAlertTemplate = {
         ],
     },
 };
-/**
- * Account Security Alert Flow
- *
- * Notifies customers of security-related account activities.
- */
 const accountSecurityTemplate = {
     id: 'account-security-alert',
     name: 'Account Security Alert',
@@ -2458,11 +2308,6 @@ const accountSecurityTemplate = {
         ],
     },
 };
-/**
- * Upsell Flow
- *
- * Encourages customers to upgrade their purchase.
- */
 const upsellTemplate = {
     id: 'upsell-upgrade',
     name: 'Upsell / Upgrade',
@@ -2553,11 +2398,6 @@ const upsellTemplate = {
         ],
     },
 };
-/**
- * Event Reminder Flow
- *
- * Reminds customers about upcoming events or webinars.
- */
 const eventReminderTemplate = {
     id: 'event-reminder',
     name: 'Event Reminder',
@@ -2637,11 +2477,6 @@ const eventReminderTemplate = {
         ],
     },
 };
-/**
- * Webinar Follow-up Flow
- *
- * Follows up with webinar attendees and no-shows.
- */
 const webinarFollowupTemplate = {
     id: 'webinar-followup',
     name: 'Webinar Follow-up',
@@ -2721,11 +2556,6 @@ const webinarFollowupTemplate = {
         ],
     },
 };
-/**
- * Survey Invitation Flow
- *
- * Invites customers to participate in surveys.
- */
 const surveyInvitationTemplate = {
     id: 'survey-invitation',
     name: 'Survey Invitation',
@@ -2800,11 +2630,6 @@ const surveyInvitationTemplate = {
         ],
     },
 };
-/**
- * Sunset Flow (Unengaged Subscribers)
- *
- * Final attempt to re-engage before removing from list.
- */
 const sunsetFlowTemplate = {
     id: 'sunset-flow',
     name: 'Sunset Flow',
@@ -2884,11 +2709,6 @@ const sunsetFlowTemplate = {
         ],
     },
 };
-/**
- * Shipping Confirmation Flow
- *
- * Sends shipping updates and tracking information.
- */
 const shippingConfirmationTemplate = {
     id: 'shipping-confirmation',
     name: 'Shipping Confirmation',
@@ -2968,11 +2788,6 @@ const shippingConfirmationTemplate = {
         ],
     },
 };
-/**
- * Trial Started Flow
- *
- * Onboards trial users and guides them through key features.
- */
 const trialStartedTemplate = {
     id: 'trial-started',
     name: 'Trial Started',
@@ -3078,11 +2893,6 @@ const trialStartedTemplate = {
         ],
     },
 };
-/**
- * Waitlist Flow
- *
- * Keeps waitlist subscribers engaged until launch.
- */
 const waitlistTemplate = {
     id: 'waitlist',
     name: 'Waitlist',
@@ -3162,11 +2972,6 @@ const waitlistTemplate = {
         ],
     },
 };
-/**
- * Early Access Flow
- *
- * Welcomes early access customers with exclusive content.
- */
 const earlyAccessTemplate = {
     id: 'early-access',
     name: 'Early Access',
@@ -3246,11 +3051,6 @@ const earlyAccessTemplate = {
         ],
     },
 };
-/**
- * Newsletter Welcome Flow
- *
- * Welcomes new newsletter subscribers.
- */
 const newsletterWelcomeTemplate = {
     id: 'newsletter-welcome',
     name: 'Newsletter Welcome',
@@ -3330,11 +3130,6 @@ const newsletterWelcomeTemplate = {
         ],
     },
 };
-/**
- * Gift Card Purchase Flow
- *
- * Thanks gift card purchasers and provides delivery options.
- */
 const giftCardPurchaseTemplate = {
     id: 'gift-card-purchase',
     name: 'Gift Card Purchase',
@@ -3390,11 +3185,6 @@ const giftCardPurchaseTemplate = {
         ],
     },
 };
-/**
- * Subscription Renewal Flow
- *
- * Reminds customers about upcoming subscription renewals.
- */
 const subscriptionRenewalTemplate = {
     id: 'subscription-renewal',
     name: 'Subscription Renewal',
@@ -3474,11 +3264,6 @@ const subscriptionRenewalTemplate = {
         ],
     },
 };
-/**
- * Product Usage Tips Flow
- *
- * Sends helpful tips based on product usage.
- */
 const productUsageTipsTemplate = {
     id: 'product-usage-tips',
     name: 'Product Usage Tips',
@@ -3569,11 +3354,6 @@ const productUsageTipsTemplate = {
         ],
     },
 };
-/**
- * Customer Success Check-In Flow
- *
- * Proactive check-ins to ensure customer satisfaction.
- */
 const customerSuccessCheckInTemplate = {
     id: 'customer-success-check-in',
     name: 'Customer Success Check-In',
@@ -3664,11 +3444,6 @@ const customerSuccessCheckInTemplate = {
         ],
     },
 };
-/**
- * Upgrade Sequence Flow
- *
- * Encourages customers to upgrade their plan or product.
- */
 const upgradeSequenceTemplate = {
     id: 'upgrade-sequence',
     name: 'Upgrade Sequence',
@@ -3748,11 +3523,6 @@ const upgradeSequenceTemplate = {
         ],
     },
 };
-/**
- * Profile Completion Flow
- *
- * Encourages customers to complete their profile.
- */
 const profileCompletionTemplate = {
     id: 'profile-completion',
     name: 'Profile Completion',
@@ -3843,11 +3613,6 @@ const profileCompletionTemplate = {
         ],
     },
 };
-/**
- * Anniversary Flow
- *
- * Celebrates customer anniversary with special offers.
- */
 const anniversaryTemplate = {
     id: 'anniversary',
     name: 'Anniversary Celebration',
@@ -3898,11 +3663,6 @@ const anniversaryTemplate = {
         ],
     },
 };
-/**
- * Quantity Break / Bulk Order Flow
- *
- * Promotes bulk discounts to frequent buyers.
- */
 const quantityBreakTemplate = {
     id: 'quantity-break',
     name: 'Bulk Order Discount',
@@ -3976,11 +3736,6 @@ const quantityBreakTemplate = {
         ],
     },
 };
-/**
- * Feature Announcement Flow
- *
- * Announces new features to existing customers.
- */
 const featureAnnouncementTemplate = {
     id: 'feature-announcement',
     name: 'Feature Announcement',
@@ -4060,11 +3815,6 @@ const featureAnnouncementTemplate = {
         ],
     },
 };
-/**
- * Community Engagement Flow
- *
- * Invites customers to join community channels.
- */
 const communityEngagementTemplate = {
     id: 'community-engagement',
     name: 'Community Engagement',
@@ -4125,11 +3875,6 @@ const communityEngagementTemplate = {
         ],
     },
 };
-/**
- * UGC (User Generated Content) Request Flow
- *
- * Requests photos, videos, or testimonials from customers.
- */
 const ugcRequestTemplate = {
     id: 'ugc-request',
     name: 'UGC Request',
@@ -4190,11 +3935,6 @@ const ugcRequestTemplate = {
         ],
     },
 };
-/**
- * Contest Entry Flow
- *
- * Promotes contests and giveaways.
- */
 const contestEntryTemplate = {
     id: 'contest-entry',
     name: 'Contest Entry',
@@ -4300,11 +4040,6 @@ const contestEntryTemplate = {
         ],
     },
 };
-/**
- * Delivery Confirmation Flow
- *
- * Confirms delivery and asks for feedback.
- */
 const deliveryConfirmationTemplate = {
     id: 'delivery-confirmation',
     name: 'Delivery Confirmation',
@@ -4355,11 +4090,6 @@ const deliveryConfirmationTemplate = {
         ],
     },
 };
-/**
- * Refund Processed Flow
- *
- * Notifies customers when refund is processed.
- */
 const refundProcessedTemplate = {
     id: 'refund-processed',
     name: 'Refund Processed',
@@ -4410,11 +4140,6 @@ const refundProcessedTemplate = {
         ],
     },
 };
-/**
- * Subscription Pause Flow
- *
- * Handles subscription pause requests with win-back attempts.
- */
 const subscriptionPauseTemplate = {
     id: 'subscription-pause',
     name: 'Subscription Pause',
@@ -4489,11 +4214,6 @@ const subscriptionPauseTemplate = {
         ],
     },
 };
-/**
- * Return Initiated Flow
- *
- * Handles return requests with support information.
- */
 const returnInitiatedTemplate = {
     id: 'return-initiated',
     name: 'Return Initiated',
@@ -4573,11 +4293,6 @@ const returnInitiatedTemplate = {
         ],
     },
 };
-/**
- * Wishlist Reminder Flow
- *
- * Reminds customers about items in their wishlist.
- */
 const wishlistReminderTemplate = {
     id: 'wishlist-reminder',
     name: 'Wishlist Reminder',
@@ -4668,11 +4383,6 @@ const wishlistReminderTemplate = {
         ],
     },
 };
-/**
- * Cart Persistence Flow
- *
- * Saves and reminds about cart across devices.
- */
 const cartPersistenceTemplate = {
     id: 'cart-persistence',
     name: 'Cart Persistence',
@@ -4723,11 +4433,6 @@ const cartPersistenceTemplate = {
         ],
     },
 };
-/**
- * SMS Re-engagement Flow
- *
- * SMS-focused re-engagement for inactive customers.
- */
 const smsReengagementTemplate = {
     id: 'sms-reengagement',
     name: 'SMS Re-engagement',
@@ -4803,11 +4508,6 @@ const smsReengagementTemplate = {
         ],
     },
 };
-/**
- * Email Re-engagement Flow
- *
- * Email-focused re-engagement for non-openers.
- */
 const emailReengagementTemplate = {
     id: 'email-reengagement',
     name: 'Email Re-engagement',
@@ -4887,11 +4587,6 @@ const emailReengagementTemplate = {
         ],
     },
 };
-/**
- * Last Chance Flow
- *
- * Final attempt before removing from list.
- */
 const lastChanceTemplate = {
     id: 'last-chance',
     name: 'Last Chance',
@@ -4966,11 +4661,6 @@ const lastChanceTemplate = {
         ],
     },
 };
-/**
- * Inactive Customer Flow
- *
- * Re-engages customers who haven't purchased in a while.
- */
 const inactiveCustomerTemplate = {
     id: 'inactive-customer',
     name: 'Inactive Customer',
@@ -5076,11 +4766,6 @@ const inactiveCustomerTemplate = {
         ],
     },
 };
-/**
- * Lapsed VIP Flow
- *
- * Re-engages VIP customers who have become inactive.
- */
 const lapsedVIPTemplate = {
     id: 'lapsed-vip',
     name: 'Lapsed VIP',
@@ -5160,18 +4845,13 @@ const lapsedVIPTemplate = {
         ],
     },
 };
-/**
- * All available flow templates
- */
 export const FLOW_TEMPLATES = [
-    // Original 6 templates
     abandonedCartTemplate,
     browseAbandonmentTemplate,
     welcomeSeriesTemplate,
     postPurchaseTemplate,
     winBackTemplate,
     orderFulfillmentTemplate,
-    // Acquisition templates (11 total)
     doubleOptInTemplate,
     subscriptionStartedTemplate,
     leadMagnetTemplate,
@@ -5181,7 +4861,6 @@ export const FLOW_TEMPLATES = [
     earlyAccessTemplate,
     newsletterWelcomeTemplate,
     giftCardPurchaseTemplate,
-    // Retention templates (14 total)
     birthdayCampaignTemplate,
     reorderReminderTemplate,
     vipRecognitionTemplate,
@@ -5195,7 +4874,6 @@ export const FLOW_TEMPLATES = [
     profileCompletionTemplate,
     anniversaryTemplate,
     quantityBreakTemplate,
-    // Engagement templates (21 total)
     reviewRequestTemplate,
     paymentFailedTemplate,
     flashSaleTemplate,
@@ -5217,7 +4895,6 @@ export const FLOW_TEMPLATES = [
     returnInitiatedTemplate,
     wishlistReminderTemplate,
     cartPersistenceTemplate,
-    // Reactivation templates (11 total)
     backInStockTemplate,
     priceDropTemplate,
     subscriptionCancelledTemplate,
@@ -5230,27 +4907,15 @@ export const FLOW_TEMPLATES = [
     inactiveCustomerTemplate,
     lapsedVIPTemplate,
 ];
-/**
- * Get all flow templates
- */
 export function getFlowTemplates() {
     return FLOW_TEMPLATES;
 }
-/**
- * Get a specific flow template by ID
- */
 export function getFlowTemplateById(templateId) {
     return FLOW_TEMPLATES.find((t) => t.id === templateId) || null;
 }
-/**
- * Get templates by category
- */
 export function getFlowTemplatesByCategory(category) {
     return FLOW_TEMPLATES.filter((t) => t.category === category);
 }
-/**
- * Get templates by trigger type
- */
 export function getFlowTemplatesByTrigger(triggerType) {
     return FLOW_TEMPLATES.filter((t) => t.triggerType === triggerType);
 }

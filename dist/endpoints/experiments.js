@@ -5,11 +5,8 @@ import createHttpError from 'http-errors';
 import crypto from 'crypto';
 import { objectIdSchema } from '../utils/validation';
 import { createAuditLog, extractAuditContext } from '../utils/audit';
-// Factory for admin operations (owner, admin, manager can create/modify experiments)
 const adminFactory = createAuthRoleFactory('admin', 'manager');
-// Conversion goal enum
 const conversionGoalEnum = z.enum(['order_placed', 'link_clicked', 'code_redeemed']);
-// Experiment schema
 const experimentSchema = z.object({
     id: z.string(),
     campaignId: objectIdSchema,
@@ -17,22 +14,17 @@ const experimentSchema = z.object({
     description: z.string().nullable(),
     controlPercent: z.number(),
     treatmentPercent: z.number(),
-    // Treatment variant fields
     treatmentSubject: z.string().nullable(),
     treatmentBody: z.string().nullable(),
     treatmentHtml: z.string().nullable(),
-    // Conversion tracking
     conversionGoal: z.string().nullable(),
     conversionWindowDays: z.number().nullable(),
-    status: z.string(), // Prisma stores as string
+    status: z.string(),
     startedAt: z.date().nullable(),
     endedAt: z.date().nullable(),
     createdAt: z.date(),
     updatedAt: z.date(),
 });
-/**
- * Create an A/B experiment for a campaign.
- */
 export const createExperimentEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Create Experiment',
@@ -44,33 +36,27 @@ export const createExperimentEndpoint = adminFactory.build({
         description: z.string().optional(),
         controlPercent: z.number().min(0).max(100).default(50),
         treatmentPercent: z.number().min(0).max(100).default(50),
-        // Treatment variant - at least one should be provided for A/B testing
         treatmentSubject: z.string().optional(),
         treatmentBody: z.string().optional(),
         treatmentHtml: z.string().optional(),
-        // Conversion tracking
         conversionGoal: conversionGoalEnum.optional(),
         conversionWindowDays: z.number().min(1).max(90).default(7),
     }),
     output: experimentSchema,
     handler: async ({ input, ctx }) => {
-        // Verify campaign exists
         const campaign = await prisma.campaignDefinition.findUnique({
             where: { id: input.campaignId },
         });
         if (!campaign) {
             throw createHttpError(404, 'Campaign not found');
         }
-        // Check percentages add up to 100
         if (input.controlPercent + input.treatmentPercent !== 100) {
             throw createHttpError(400, 'Control and treatment percentages must add up to 100');
         }
-        // Validate that at least one treatment variant is provided
         const hasTreatmentVariant = input.treatmentSubject || input.treatmentBody || input.treatmentHtml;
         if (!hasTreatmentVariant) {
             throw createHttpError(400, 'At least one treatment variant must be provided (treatmentSubject, treatmentBody, or treatmentHtml)');
         }
-        // Check for existing active experiment on this campaign
         const existingExperiment = await prisma.experiment.findFirst({
             where: {
                 campaignId: input.campaignId,
@@ -95,7 +81,6 @@ export const createExperimentEndpoint = adminFactory.build({
                 status: 'draft',
             },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'experiment_created',
@@ -107,9 +92,6 @@ export const createExperimentEndpoint = adminFactory.build({
         return experiment;
     },
 });
-/**
- * List experiments.
- */
 export const listExperimentsEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Experiments',
@@ -141,7 +123,6 @@ export const listExperimentsEndpoint = authFactory.build({
     handler: async ({ input }) => {
         const { page, pageSize, campaignId, status } = input;
         const skip = (page - 1) * pageSize;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const where = {};
         if (campaignId)
             where.campaignId = campaignId;
@@ -159,7 +140,6 @@ export const listExperimentsEndpoint = authFactory.build({
             }),
             prisma.experiment.count({ where }),
         ]);
-        // Calculate metrics for each experiment
         const itemsWithMetrics = await Promise.all(experiments.map(async (exp) => {
             const [controlSent, treatmentSent, controlConversions, treatmentConversions] = await Promise.all([
                 prisma.experimentAssignment.count({
@@ -189,9 +169,6 @@ export const listExperimentsEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Get a single experiment with full metrics.
- */
 export const getExperimentEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Experiment',
@@ -224,7 +201,6 @@ export const getExperimentEndpoint = authFactory.build({
         if (!experiment) {
             throw createHttpError(404, 'Experiment not found');
         }
-        // Calculate detailed metrics
         const [controlSent, treatmentSent, controlConversions, treatmentConversions] = await Promise.all([
             prisma.experimentAssignment.count({
                 where: { experimentId: experiment.id, cohort: 'control' },
@@ -258,9 +234,6 @@ export const getExperimentEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Start an experiment.
- */
 export const startExperimentEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Start Experiment',
@@ -292,7 +265,6 @@ export const startExperimentEndpoint = adminFactory.build({
                 startedAt: experiment.startedAt || new Date(),
             },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'experiment_started',
@@ -304,9 +276,6 @@ export const startExperimentEndpoint = adminFactory.build({
         return { success: true, status: 'running' };
     },
 });
-/**
- * Stop/complete an experiment.
- */
 export const stopExperimentEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Stop Experiment',
@@ -340,7 +309,6 @@ export const stopExperimentEndpoint = adminFactory.build({
                 endedAt: input.action === 'complete' ? new Date() : undefined,
             },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'experiment_stopped',
@@ -352,10 +320,6 @@ export const stopExperimentEndpoint = adminFactory.build({
         return { success: true, status: newStatus };
     },
 });
-/**
- * Assign a customer to a cohort deterministically.
- * This is typically called internally during campaign execution.
- */
 export const assignCohortEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Assign Cohort',
@@ -380,7 +344,6 @@ export const assignCohortEndpoint = authFactory.build({
         if (!experiment) {
             throw createHttpError(404, 'Experiment not found or not running');
         }
-        // Check for existing assignment
         const existingAssignment = await prisma.experimentAssignment.findFirst({
             where: {
                 experimentId: experiment.id,
@@ -394,7 +357,6 @@ export const assignCohortEndpoint = authFactory.build({
                 isNew: false,
             };
         }
-        // Deterministic assignment based on hash of experiment ID + customer ID
         const hash = crypto
             .createHash('sha256')
             .update(`${experiment.id}:${input.customerId}`)
@@ -416,9 +378,6 @@ export const assignCohortEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Delete an experiment.
- */
 export const deleteExperimentEndpoint = adminFactory.build({
     method: 'delete',
     shortDescription: 'Delete Experiment',
@@ -441,15 +400,12 @@ export const deleteExperimentEndpoint = adminFactory.build({
         if (experiment.status === 'running') {
             throw createHttpError(400, 'Cannot delete a running experiment. Stop it first.');
         }
-        // Delete all assignments first
         await prisma.experimentAssignment.deleteMany({
             where: { experimentId: input.experimentId },
         });
-        // Delete the experiment
         await prisma.experiment.delete({
             where: { id: input.experimentId },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'experiment_deleted',
@@ -464,9 +420,6 @@ export const deleteExperimentEndpoint = adminFactory.build({
         };
     },
 });
-/**
- * Record a conversion for an experiment assignment.
- */
 export const recordConversionEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Record Conversion',
@@ -490,7 +443,6 @@ export const recordConversionEndpoint = authFactory.build({
             },
         });
         if (!assignment) {
-            // Customer was not part of this experiment
             return { success: false, assignmentId: null };
         }
         await prisma.experimentAssignment.update({

@@ -1,12 +1,4 @@
-/**
- * WooCommerce Platform Adapter
- * Handles API authentication and data sync for WooCommerce stores
- *
- * Note: WooCommerce uses REST API with consumer key/secret authentication
- * rather than OAuth. Webhooks are registered via the WooCommerce admin.
- */
 import crypto from 'crypto';
-// Webhook topics for WooCommerce
 const WOOCOMMERCE_WEBHOOK_TOPICS = [
     'customer.created',
     'customer.updated',
@@ -22,20 +14,11 @@ export class WooCommerceAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * WooCommerce doesn't use OAuth - this returns a URL to the REST API settings page
-     */
     getAuthUrl(siteUrl, _redirectUri, _state) {
         return `${siteUrl}/wp-admin/admin.php?page=wc-settings&tab=advanced&section=keys`;
     }
-    /**
-     * WooCommerce uses API keys, not OAuth tokens
-     * This method validates the credentials and returns them as tokens
-     */
-    async exchangeCodeForToken(siteUrl, credentials, // Format: "consumerKey:consumerSecret"
-    _redirectUri) {
+    async exchangeCodeForToken(siteUrl, credentials, _redirectUri) {
         const [consumerKey, consumerSecret] = credentials.split(':');
-        // Verify credentials
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
         const response = await fetch(`${siteUrl}/wp-json/wc/v3/system_status`, {
             headers: { Authorization: `Basic ${auth}` },
@@ -44,13 +27,10 @@ export class WooCommerceAdapter {
             throw new Error(`Invalid WooCommerce credentials: ${response.status}`);
         }
         return {
-            accessToken: credentials, // Store as key:secret
+            accessToken: credentials,
             scopes: ['read_write'],
         };
     }
-    /**
-     * Register webhooks with WooCommerce
-     */
     async registerWebhooks(siteUrl, accessToken, callbackUrl) {
         const [consumerKey, consumerSecret] = accessToken.split(':');
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
@@ -81,9 +61,6 @@ export class WooCommerceAdapter {
         }
         return webhookIds;
     }
-    /**
-     * Unregister webhooks from WooCommerce
-     */
     async unregisterWebhooks(siteUrl, accessToken, webhookIds) {
         const [consumerKey, consumerSecret] = accessToken.split(':');
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
@@ -99,16 +76,10 @@ export class WooCommerceAdapter {
             }
         }
     }
-    /**
-     * Verify webhook signature
-     */
     verifyWebhook(rawBody, signature, secret) {
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers from WooCommerce
-     */
     async fetchCustomers(siteUrl, accessToken, cursor) {
         const [consumerKey, consumerSecret] = accessToken.split(':');
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
@@ -126,9 +97,6 @@ export class WooCommerceAdapter {
             cursor: page < totalPages ? String(page + 1) : undefined,
         };
     }
-    /**
-     * Fetch orders from WooCommerce
-     */
     async fetchOrders(siteUrl, accessToken, cursor, sinceDate) {
         const [consumerKey, consumerSecret] = accessToken.split(':');
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
@@ -152,9 +120,6 @@ export class WooCommerceAdapter {
             cursor: page < totalPages ? String(page + 1) : undefined,
         };
     }
-    /**
-     * Parse webhook payload
-     */
     parseWebhookPayload(topic, payload) {
         if (topic.startsWith('customer.') && topic !== 'customer.deleted') {
             return this.mapCustomer(payload);
@@ -167,9 +132,6 @@ export class WooCommerceAdapter {
         }
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapCustomer(c) {
         const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
         return {
@@ -226,9 +188,6 @@ export class WooCommerceAdapter {
         };
     }
 }
-/**
- * Create WooCommerce adapter
- */
 export function createWooCommerceAdapter() {
     return new WooCommerceAdapter({
         platform: 'WOOCOMMERCE',

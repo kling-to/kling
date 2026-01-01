@@ -5,12 +5,10 @@ import { publicFactory, publicWithRequestFactory, authFactory } from '../factori
 import prisma from '../utils/prisma';
 import createHttpError from 'http-errors';
 import { createAuditLog, extractAuditContext, AuditActions } from '../utils/audit';
-// Read secrets lazily to ensure dotenv has loaded
 const getJwtSecret = () => process.env.JWT_SECRET || 'dev-secret';
 const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || '15m';
 const getRefreshTokenExpiresIn = () => process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = 10;
-// Helper to get signup settings
 async function getSignupSettings() {
     const settings = await prisma.settings.findFirst();
     return {
@@ -18,11 +16,9 @@ async function getSignupSettings() {
         allowedSignupDomains: settings?.allowedSignupDomains ?? [],
     };
 }
-// Helper to extract domain from email
 function getEmailDomain(email) {
     return email.split('@')[1]?.toLowerCase() ?? '';
 }
-// Register endpoint
 export const registerEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'User Registration',
@@ -45,10 +41,8 @@ export const registerEndpoint = publicWithRequestFactory.build({
         }),
     }),
     handler: async ({ input, ctx }) => {
-        // Check if this is the first user (first user always allowed to register)
         const userCount = await prisma.user.count();
         const isFirstUser = userCount === 0;
-        // Check signup restrictions (only for non-first users)
         if (!isFirstUser) {
             const { signupMode, allowedSignupDomains } = await getSignupSettings();
             if (signupMode === 'disabled') {
@@ -62,16 +56,13 @@ export const registerEndpoint = publicWithRequestFactory.build({
                 }
             }
         }
-        // Check if user already exists
         const existingUser = await prisma.user.findUnique({
             where: { email: input.email },
         });
         if (existingUser) {
             throw createHttpError(400, 'User with this email already exists');
         }
-        // Hash password
         const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-        // Create user with appropriate role
         const user = await prisma.user.create({
             data: {
                 email: input.email,
@@ -80,7 +71,6 @@ export const registerEndpoint = publicWithRequestFactory.build({
                 role: isFirstUser ? 'ADMIN' : 'STAFF',
             },
         });
-        // Audit log the registration
         const auditContext = extractAuditContext(ctx.request, {
             sub: user.id,
         });
@@ -95,9 +85,7 @@ export const registerEndpoint = publicWithRequestFactory.build({
             },
             context: auditContext,
         });
-        // Map database role to JWT role
         const jwtRole = user.role.toLowerCase();
-        // Generate tokens
         const accessToken = jwt.sign({
             sub: user.id,
             role: jwtRole,
@@ -119,7 +107,6 @@ export const registerEndpoint = publicWithRequestFactory.build({
         };
     },
 });
-// Login endpoint
 export const loginEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'User Login',
@@ -141,21 +128,17 @@ export const loginEndpoint = publicWithRequestFactory.build({
         }),
     }),
     handler: async ({ input, ctx }) => {
-        // Find user by email
         const user = await prisma.user.findUnique({
             where: { email: input.email },
         });
         if (!user || !user.passwordHash) {
             throw createHttpError(401, 'Invalid email or password');
         }
-        // Verify password
         const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
         if (!isValidPassword) {
             throw createHttpError(401, 'Invalid email or password');
         }
-        // Map database role to JWT role
         const jwtRole = user.role.toLowerCase();
-        // Generate tokens
         const accessToken = jwt.sign({
             sub: user.id,
             role: jwtRole,
@@ -164,7 +147,6 @@ export const loginEndpoint = publicWithRequestFactory.build({
             sub: user.id,
             type: 'refresh',
         }, getJwtSecret(), { expiresIn: getRefreshTokenExpiresIn(), algorithm: 'HS256' });
-        // Audit log the login
         const auditContext = extractAuditContext(ctx.request, {
             sub: user.id,
         });
@@ -191,7 +173,6 @@ export const loginEndpoint = publicWithRequestFactory.build({
         };
     },
 });
-// Refresh token endpoint
 export const refreshEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'Token Refresh',
@@ -207,24 +188,19 @@ export const refreshEndpoint = publicFactory.build({
     }),
     handler: async ({ input }) => {
         try {
-            // Verify refresh token
             const decoded = jwt.verify(input.refreshToken, getJwtSecret(), {
                 algorithms: ['HS256'],
             });
-            // Check if it's a refresh token
             if (decoded.type !== 'refresh') {
                 throw createHttpError(401, 'Invalid token type');
             }
-            // Get user
             const user = await prisma.user.findUnique({
                 where: { id: decoded.sub },
             });
             if (!user) {
                 throw createHttpError(401, 'User not found');
             }
-            // Map database role to JWT role
             const jwtRole = user.role.toLowerCase();
-            // Generate new tokens
             const accessToken = jwt.sign({
                 sub: user.id,
                 role: jwtRole,
@@ -250,7 +226,6 @@ export const refreshEndpoint = publicFactory.build({
         }
     },
 });
-// Logout endpoint (returns 204)
 export const logoutEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'User Logout',
@@ -259,13 +234,10 @@ export const logoutEndpoint = publicFactory.build({
     input: z.object({}),
     output: z.object({}),
     handler: async () => {
-        // No-op for stateless JWT
         return {};
     },
 });
-// Password reset token expiry (1 hour)
 const PASSWORD_RESET_EXPIRES_IN = '1h';
-// Forgot password endpoint
 export const forgotPasswordEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'Forgot Password',
@@ -279,30 +251,23 @@ export const forgotPasswordEndpoint = publicFactory.build({
         message: z.string(),
     }),
     handler: async ({ input }) => {
-        // Always return success to prevent email enumeration
         const successResponse = {
             success: true,
             message: 'If an account with that email exists, a password reset link has been sent.',
         };
-        // Find user by email
         const user = await prisma.user.findUnique({
             where: { email: input.email },
         });
         if (!user) {
-            // Don't reveal that email doesn't exist
             return successResponse;
         }
-        // Generate password reset token (JWT with short expiry)
         const resetToken = jwt.sign({
             sub: user.id,
             type: 'password_reset',
             email: user.email,
         }, getJwtSecret(), { expiresIn: PASSWORD_RESET_EXPIRES_IN, algorithm: 'HS256' });
-        // Get app URL from environment
         const appUrl = process.env.APP_URL || 'http://localhost:5173';
-        // Build reset URL
         const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
-        // Send password reset email using the provider registry
         try {
             const { providerRegistry } = await import('../providers/registry');
             const emailProvider = providerRegistry.getForChannel('EMAIL');
@@ -331,12 +296,10 @@ export const forgotPasswordEndpoint = publicFactory.build({
         }
         catch (error) {
             console.error('Failed to send password reset email:', error);
-            // Still return success to prevent email enumeration
         }
         return successResponse;
     },
 });
-// Reset password endpoint
 export const resetPasswordEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'Reset Password',
@@ -352,28 +315,22 @@ export const resetPasswordEndpoint = publicFactory.build({
     }),
     handler: async ({ input }) => {
         try {
-            // Verify the reset token
             const decoded = jwt.verify(input.token, getJwtSecret(), {
                 algorithms: ['HS256'],
             });
-            // Check if it's a password reset token
             if (decoded.type !== 'password_reset') {
                 throw createHttpError(400, 'Invalid reset token');
             }
-            // Find user
             const user = await prisma.user.findUnique({
                 where: { id: decoded.sub },
             });
             if (!user) {
                 throw createHttpError(400, 'Invalid reset token');
             }
-            // Verify email matches (extra security)
             if (decoded.email !== user.email) {
                 throw createHttpError(400, 'Invalid reset token');
             }
-            // Hash new password
             const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-            // Update user password
             await prisma.user.update({
                 where: { id: user.id },
                 data: { passwordHash },
@@ -394,7 +351,6 @@ export const resetPasswordEndpoint = publicFactory.build({
         }
     },
 });
-// Get current user endpoint
 export const meEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Current User',

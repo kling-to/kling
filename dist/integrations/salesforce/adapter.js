@@ -1,7 +1,3 @@
-/**
- * Salesforce Platform Adapter
- * Handles OAuth and data sync for Salesforce Commerce Cloud / CRM
- */
 import crypto from 'crypto';
 const SALESFORCE_WEBHOOK_EVENTS = [
     'Contact.create',
@@ -17,9 +13,6 @@ export class SalesforceAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * Generate OAuth authorization URL
-     */
     getAuthUrl(_instanceUrl, redirectUri, state) {
         const loginUrl = this.config.loginUrl || 'https://login.salesforce.com';
         return (`${loginUrl}/services/oauth2/authorize?` +
@@ -28,9 +21,6 @@ export class SalesforceAdapter {
             `&response_type=code` +
             `&state=${state}`);
     }
-    /**
-     * Exchange authorization code for access token
-     */
     async exchangeCodeForToken(_instanceUrl, code, redirectUri) {
         const loginUrl = this.config.loginUrl || 'https://login.salesforce.com';
         const response = await fetch(`${loginUrl}/services/oauth2/token`, {
@@ -54,9 +44,6 @@ export class SalesforceAdapter {
             scopes: ['api', 'refresh_token'],
         };
     }
-    /**
-     * Refresh access token
-     */
     async refreshAccessToken(refreshToken) {
         const loginUrl = this.config.loginUrl || 'https://login.salesforce.com';
         const response = await fetch(`${loginUrl}/services/oauth2/token`, {
@@ -75,46 +62,26 @@ export class SalesforceAdapter {
         const data = (await response.json());
         return {
             accessToken: data.access_token,
-            refreshToken, // Salesforce doesn't always return a new refresh token
+            refreshToken,
             scopes: ['api', 'refresh_token'],
         };
     }
-    /**
-     * Register webhooks - Salesforce uses Platform Events or Outbound Messages
-     * These are typically configured in Salesforce Setup, not via API
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async registerWebhooks(_instanceUrl, _accessToken, _callbackUrl) {
-        // Salesforce webhooks are configured via Salesforce Setup UI
-        // or using Salesforce Connect / Platform Events
         return [];
     }
-    /**
-     * Unregister webhooks
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async unregisterWebhooks(_instanceUrl, _accessToken, _webhookIds) {
-        // Webhooks are managed via Salesforce Setup
     }
-    /**
-     * Verify webhook signature (Outbound Messages use certificate validation)
-     */
     verifyWebhook(rawBody, signature, secret) {
-        // Salesforce Outbound Messages can be verified via the organization ID
-        // or using the certificate for signed messages
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers (Contacts) from Salesforce
-     */
     async fetchCustomers(instanceUrl, accessToken, cursor) {
         const limit = 200;
         let query = `SELECT Id, Email, Phone, FirstName, LastName, Name, CreatedDate, LastModifiedDate,
                  MailingCity, MailingState, MailingCountry, MailingPostalCode
                  FROM Contact ORDER BY CreatedDate DESC LIMIT ${limit}`;
         if (cursor) {
-            query = cursor; // Use nextRecordsUrl for pagination
+            query = cursor;
         }
         const url = cursor || `${instanceUrl}/services/data/v59.0/query?q=${encodeURIComponent(query)}`;
         const response = await fetch(url, {
@@ -133,14 +100,8 @@ export class SalesforceAdapter {
             cursor: result.nextRecordsUrl ? `${instanceUrl}${result.nextRecordsUrl}` : undefined,
         };
     }
-    /**
-     * Fetch orders from Salesforce
-     */
-    async fetchOrders(instanceUrl, accessToken, cursor, 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _sinceDate) {
+    async fetchOrders(instanceUrl, accessToken, cursor, _sinceDate) {
         const limit = 200;
-        // Fetch orders with their line items
         const query = `SELECT Id, AccountId, TotalAmount, Status, OrderNumber, EffectiveDate,
                  CreatedDate, LastModifiedDate
                  FROM Order ORDER BY CreatedDate DESC LIMIT ${limit}`;
@@ -155,7 +116,6 @@ export class SalesforceAdapter {
             throw new Error(`Failed to fetch orders: ${await response.text()}`);
         }
         const result = (await response.json());
-        // Fetch order items for each order
         const ordersWithItems = [];
         for (const order of result.records) {
             if (order.AccountId) {
@@ -174,7 +134,6 @@ export class SalesforceAdapter {
                     }
                 }
                 catch {
-                    // Skip order if can't fetch items
                 }
             }
         }
@@ -184,20 +143,13 @@ export class SalesforceAdapter {
             cursor: result.nextRecordsUrl ? `${instanceUrl}${result.nextRecordsUrl}` : undefined,
         };
     }
-    /**
-     * Parse webhook payload (Outbound Message format)
-     */
     parseWebhookPayload(topic, payload) {
         const data = payload;
         if (topic.includes('Contact') && data.sObject) {
             return this.mapContact(data.sObject);
         }
-        // Orders would need items fetched separately
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapContact(c) {
         const name = c.Name || [c.FirstName, c.LastName].filter(Boolean).join(' ') || null;
         return {
@@ -231,7 +183,7 @@ export class SalesforceAdapter {
             externalId: `salesforce:${o.Id}`,
             customerExternalId: `salesforce:${o.AccountId}`,
             total: o.TotalAmount,
-            currency: 'USD', // Salesforce stores currency in multi-currency orgs
+            currency: 'USD',
             status,
             couponCode: null,
             items: items.map((item) => ({
@@ -246,9 +198,6 @@ export class SalesforceAdapter {
         };
     }
 }
-/**
- * Create Salesforce adapter
- */
 export function createSalesforceAdapter(config) {
     return new SalesforceAdapter({
         platform: 'SALESFORCE',

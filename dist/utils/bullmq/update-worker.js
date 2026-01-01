@@ -1,10 +1,3 @@
-/**
- * System Update Worker
- *
- * BullMQ worker that handles system updates and rollbacks.
- * Performs git operations, dependency installation, migrations,
- * and triggers server restart.
- */
 import { Worker, Queue } from 'bullmq';
 import { getRedisConnection } from './connection';
 import { execSync } from 'child_process';
@@ -12,38 +5,29 @@ import fs from 'fs';
 import path from 'path';
 import { createAuditLog, AuditActions } from '../audit';
 import { triggerBackupNow } from './backup-worker';
-// Queue name
 export const UPDATE_QUEUE_NAME = 'updateQueue';
-// Singleton instances
 let updateQueue = null;
 let updateWorker = null;
-/**
- * Get or create the update queue
- */
 export function getUpdateQueue() {
     if (!updateQueue) {
         updateQueue = new Queue(UPDATE_QUEUE_NAME, {
             connection: getRedisConnection(),
             defaultJobOptions: {
-                attempts: 1, // Don't retry updates automatically
+                attempts: 1,
                 removeOnComplete: {
-                    age: 7 * 24 * 60 * 60, // Keep completed jobs for 7 days
+                    age: 7 * 24 * 60 * 60,
                     count: 20,
                 },
                 removeOnFail: {
-                    age: 30 * 24 * 60 * 60, // Keep failed jobs for 30 days
+                    age: 30 * 24 * 60 * 60,
                 },
             },
         });
     }
     return updateQueue;
 }
-/**
- * Queue an update job
- */
 export async function queueUpdateJob(data) {
     const queue = getUpdateQueue();
-    // Check if there's already an active update job
     const activeJobs = await queue.getActive();
     const waitingJobs = await queue.getWaiting();
     if (activeJobs.length > 0 || waitingJobs.length > 0) {
@@ -54,9 +38,6 @@ export async function queueUpdateJob(data) {
     });
     return job.id || '';
 }
-/**
- * Get the currently active update job, if any
- */
 export async function getActiveUpdateJob() {
     const queue = getUpdateQueue();
     const activeJobs = await queue.getActive();
@@ -69,9 +50,6 @@ export async function getActiveUpdateJob() {
     }
     return null;
 }
-/**
- * Execute a command and return output
- */
 function execCommand(command, cwd) {
     try {
         const output = execSync(command, {
@@ -90,9 +68,6 @@ function execCommand(command, cwd) {
         };
     }
 }
-/**
- * Get the current version from package.json
- */
 function getCurrentVersion() {
     try {
         const packagePath = path.join(process.cwd(), 'package.json');
@@ -103,9 +78,6 @@ function getCurrentVersion() {
         return '1.0.0';
     }
 }
-/**
- * Start the update worker
- */
 export function startUpdateWorker() {
     if (updateWorker) {
         return updateWorker;
@@ -116,17 +88,13 @@ export function startUpdateWorker() {
         const actionType = isRollback ? 'rollback' : 'update';
         console.log(`[UpdateWorker] Starting ${actionType} to version ${version}...`);
         try {
-            // Step 1: Pre-flight checks
             await job.updateProgress(5);
             console.log('[UpdateWorker] Running pre-flight checks...');
-            // Check if we're in a git repository
             if (!fs.existsSync(path.join(process.cwd(), '.git'))) {
                 throw new Error('Not a git repository');
             }
-            // Check disk space (basic check)
             const { output: dfOutput } = execCommand('df -h .');
             console.log('[UpdateWorker] Disk space:', dfOutput.split('\n')[1]);
-            // Step 2: Create backup (unless skipped)
             await job.updateProgress(10);
             if (!skipBackup) {
                 console.log('[UpdateWorker] Creating database backup...');
@@ -136,20 +104,17 @@ export function startUpdateWorker() {
                 }
                 catch (backupError) {
                     console.warn('[UpdateWorker] Backup failed, continuing anyway:', backupError);
-                    // Don't fail the update if backup fails
                 }
             }
             else {
                 console.log('[UpdateWorker] Skipping backup (user requested)');
             }
-            // Step 3: Fetch latest from remote
             await job.updateProgress(20);
             console.log('[UpdateWorker] Fetching from remote...');
             const fetchResult = execCommand('git fetch --tags');
             if (!fetchResult.success) {
                 throw new Error(`Git fetch failed: ${fetchResult.error}`);
             }
-            // Step 4: Resolve version to tag
             await job.updateProgress(30);
             let targetTag = version;
             if (version === 'latest') {
@@ -163,39 +128,33 @@ export function startUpdateWorker() {
                 targetTag = `v${version}`;
             }
             console.log(`[UpdateWorker] Target version: ${targetTag}`);
-            // Step 5: Checkout the version
             await job.updateProgress(40);
             console.log(`[UpdateWorker] Checking out ${targetTag}...`);
             const checkoutResult = execCommand(`git checkout ${targetTag}`);
             if (!checkoutResult.success) {
                 throw new Error(`Git checkout failed: ${checkoutResult.error}`);
             }
-            // Step 6: Install dependencies
             await job.updateProgress(50);
             console.log('[UpdateWorker] Installing dependencies...');
             const installResult = execCommand('npm install --omit=dev');
             if (!installResult.success) {
                 throw new Error(`npm install failed: ${installResult.error}`);
             }
-            // Step 7: Generate Prisma client
             await job.updateProgress(70);
             console.log('[UpdateWorker] Generating Prisma client...');
             const generateResult = execCommand('npx prisma generate');
             if (!generateResult.success) {
                 throw new Error(`Prisma generate failed: ${generateResult.error}`);
             }
-            // Step 8: Run database migrations
             await job.updateProgress(80);
             console.log('[UpdateWorker] Running database migrations...');
             const migrateResult = execCommand('npx prisma migrate deploy');
             if (!migrateResult.success) {
                 console.warn('[UpdateWorker] Migration warning:', migrateResult.error);
-                // Don't fail on migration warnings, only on errors
                 if (migrateResult.error && !migrateResult.error.includes('Already in sync')) {
                     throw new Error(`Prisma migrate failed: ${migrateResult.error}`);
                 }
             }
-            // Step 9: Log success
             await job.updateProgress(90);
             console.log('[UpdateWorker] Logging success...');
             await createAuditLog({
@@ -211,14 +170,11 @@ export function startUpdateWorker() {
                 },
                 context: { userId },
             });
-            // Step 10: Schedule restart
             await job.updateProgress(100);
             console.log('[UpdateWorker] Update completed successfully!');
             console.log('[UpdateWorker] Server will restart in 3 seconds...');
-            // Give time for the response to be sent, then restart
             setTimeout(() => {
                 console.log('[UpdateWorker] Restarting server...');
-                // Exit with code 0 so supervisor/docker restarts us
                 process.exit(0);
             }, 3000);
             return {
@@ -231,7 +187,6 @@ export function startUpdateWorker() {
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             console.error(`[UpdateWorker] ${actionType} failed:`, errorMessage);
-            // Log failure
             await createAuditLog({
                 action: isRollback
                     ? AuditActions.systemRollback.failed
@@ -245,7 +200,6 @@ export function startUpdateWorker() {
                 },
                 context: { userId },
             });
-            // Try to rollback to previous version on failure (if not already a rollback)
             if (!isRollback) {
                 console.log(`[UpdateWorker] Attempting to restore previous version ${previousVersion}...`);
                 try {
@@ -262,7 +216,7 @@ export function startUpdateWorker() {
         }
     }, {
         connection: getRedisConnection(),
-        concurrency: 1, // Only one update at a time
+        concurrency: 1,
     });
     updateWorker.on('completed', (job, result) => {
         console.log(`[UpdateWorker] Job ${job.id} completed: ${result.version}`);
@@ -273,9 +227,6 @@ export function startUpdateWorker() {
     console.log('[UpdateWorker] Started');
     return updateWorker;
 }
-/**
- * Stop the update worker
- */
 export async function stopUpdateWorker() {
     if (updateWorker) {
         await updateWorker.close();
@@ -283,9 +234,6 @@ export async function stopUpdateWorker() {
         console.log('[UpdateWorker] Stopped');
     }
 }
-/**
- * Check if update worker is running
- */
 export function isUpdateWorkerRunning() {
     return updateWorker !== null && !updateWorker.closing;
 }

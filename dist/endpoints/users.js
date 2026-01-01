@@ -4,7 +4,6 @@ import prisma from '../utils/prisma';
 import createHttpError from 'http-errors';
 import { createAuditLog, AuditActions } from '../utils/audit';
 import { objectIdSchema } from '../utils/validation';
-// List users endpoint (owner and admin only)
 export const listUsersEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'List Users',
@@ -33,9 +32,8 @@ export const listUsersEndpoint = createAuthRoleFactory('admin').build({
     }),
     handler: async ({ input }) => {
         const page = parseInt(input.page);
-        const limit = Math.min(parseInt(input.limit), 100); // Max 100 per page
+        const limit = Math.min(parseInt(input.limit), 100);
         const skip = (page - 1) * limit;
-        // Build where clause for search
         const where = {};
         if (input.search) {
             where.OR = [
@@ -43,7 +41,6 @@ export const listUsersEndpoint = createAuthRoleFactory('admin').build({
                 { name: { contains: input.search, mode: 'insensitive' } },
             ];
         }
-        // Fetch users with pagination
         const [users, total] = await Promise.all([
             prisma.user.findMany({
                 where,
@@ -75,7 +72,6 @@ export const listUsersEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// Get user endpoint
 export const getUserEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get User',
@@ -93,7 +89,6 @@ export const getUserEndpoint = authFactory.build({
         updatedAt: z.date(),
     }),
     handler: async ({ input }) => {
-        // Fetch user from database
         const user = await prisma.user.findUnique({
             where: { id: input.userId },
             select: {
@@ -114,7 +109,6 @@ export const getUserEndpoint = authFactory.build({
         };
     },
 });
-// Update user role endpoint (admin only)
 export const updateUserRoleEndpoint = createAuthRoleFactory('admin').build({
     method: 'patch',
     shortDescription: 'Update User Role',
@@ -136,18 +130,15 @@ export const updateUserRoleEndpoint = createAuthRoleFactory('admin').build({
     }),
     handler: async ({ input, ctx }) => {
         const { userId, role } = input;
-        // Prevent admin from demoting themselves
         if (userId === ctx.user.sub) {
             throw createHttpError(400, 'You cannot change your own role');
         }
-        // Check user exists
         const existingUser = await prisma.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
             throw createHttpError(404, 'User not found');
         }
-        // Update user role
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: { role },
@@ -158,7 +149,6 @@ export const updateUserRoleEndpoint = createAuthRoleFactory('admin').build({
                 role: true,
             },
         });
-        // Create audit log
         await createAuditLog({
             action: AuditActions.member.roleChanged,
             resourceType: 'user',
@@ -180,7 +170,6 @@ export const updateUserRoleEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// Delete user endpoint (admin only)
 export const deleteUserEndpoint = createAuthRoleFactory('admin').build({
     method: 'delete',
     shortDescription: 'Delete User',
@@ -195,30 +184,24 @@ export const deleteUserEndpoint = createAuthRoleFactory('admin').build({
     }),
     handler: async ({ input, ctx }) => {
         const { userId } = input;
-        // Prevent admin from deleting themselves
         if (userId === ctx.user.sub) {
             throw createHttpError(400, 'You cannot delete your own account');
         }
-        // Check user exists
         const existingUser = await prisma.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
             throw createHttpError(404, 'User not found');
         }
-        // Count remaining admins
         const adminCount = await prisma.user.count({
             where: { role: 'ADMIN' },
         });
-        // Prevent deleting the last admin
         if (existingUser.role === 'ADMIN' && adminCount <= 1) {
             throw createHttpError(400, 'Cannot delete the last admin user');
         }
-        // Delete user
         await prisma.user.delete({
             where: { id: userId },
         });
-        // Create audit log
         await createAuditLog({
             action: AuditActions.member.removed,
             resourceType: 'user',

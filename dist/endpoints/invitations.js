@@ -7,17 +7,12 @@ import prisma from '../utils/prisma';
 import createHttpError from 'http-errors';
 import { createAuditLog, extractAuditContext, AuditActions } from '../utils/audit';
 import { objectIdSchema } from '../utils/validation';
-// Read secrets lazily to ensure dotenv has loaded
 const getJwtSecret = () => process.env.JWT_SECRET || 'dev-secret';
 const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || '15m';
 const getRefreshTokenExpiresIn = () => process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = 10;
 const INVITE_EXPIRY_DAYS = 7;
-// Factory for admin operations
 const inviteFactory = createAuthRoleFactory('admin');
-/**
- * Create an invitation.
- */
 export const createInvitationEndpoint = inviteFactory.build({
     method: 'post',
     shortDescription: 'Create Invitation',
@@ -35,14 +30,12 @@ export const createInvitationEndpoint = inviteFactory.build({
         expiresAt: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Check if user already exists
         const existingUser = await prisma.user.findUnique({
             where: { email: input.email },
         });
         if (existingUser) {
             throw createHttpError(400, 'User already exists with this email');
         }
-        // Check for existing pending invitation
         const existingInvite = await prisma.invitation.findFirst({
             where: {
                 email: input.email,
@@ -53,11 +46,9 @@ export const createInvitationEndpoint = inviteFactory.build({
         if (existingInvite) {
             throw createHttpError(400, 'An active invitation already exists for this email');
         }
-        // Generate secure token
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
-        // Create invitation
         const invitation = await prisma.invitation.create({
             data: {
                 email: input.email,
@@ -68,7 +59,6 @@ export const createInvitationEndpoint = inviteFactory.build({
                 status: 'pending',
             },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: AuditActions.member.invited,
@@ -80,7 +70,6 @@ export const createInvitationEndpoint = inviteFactory.build({
             },
             context: auditContext,
         });
-        // TODO: Send invitation email with token
         console.log(`[Invitation] Token for ${input.email}: ${token}`);
         return {
             id: invitation.id,
@@ -91,9 +80,6 @@ export const createInvitationEndpoint = inviteFactory.build({
         };
     },
 });
-/**
- * List all invitations.
- */
 export const listInvitationsEndpoint = inviteFactory.build({
     method: 'get',
     shortDescription: 'List Invitations',
@@ -126,9 +112,6 @@ export const listInvitationsEndpoint = inviteFactory.build({
         };
     },
 });
-/**
- * Revoke a pending invitation.
- */
 export const revokeInvitationEndpoint = inviteFactory.build({
     method: 'delete',
     shortDescription: 'Revoke Invitation',
@@ -154,7 +137,6 @@ export const revokeInvitationEndpoint = inviteFactory.build({
             where: { id: invitation.id },
             data: { status: 'revoked' },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: AuditActions.member.removed,
@@ -169,10 +151,6 @@ export const revokeInvitationEndpoint = inviteFactory.build({
         return { success: true };
     },
 });
-/**
- * Accept an invitation.
- * Creates user account with the invited role.
- */
 export const acceptInvitationEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Accept Invitation',
@@ -195,7 +173,6 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
         }),
     }),
     handler: async ({ input, ctx }) => {
-        // Find invitation by token
         const invitation = await prisma.invitation.findFirst({
             where: {
                 token: input.token,
@@ -206,17 +183,14 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
         if (!invitation) {
             throw createHttpError(400, 'Invalid or expired invitation');
         }
-        // Check if user already exists (shouldn't happen, but safety check)
         const existingUser = await prisma.user.findUnique({
             where: { email: invitation.email },
         });
         if (existingUser) {
             throw createHttpError(400, 'User already exists with this email');
         }
-        // Create user with the invited role
         const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
         const user = await prisma.$transaction(async (tx) => {
-            // Create user with role from invitation
             const newUser = await tx.user.create({
                 data: {
                     email: invitation.email,
@@ -225,7 +199,6 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
                     role: invitation.role,
                 },
             });
-            // Update invitation status
             await tx.invitation.update({
                 where: { id: invitation.id },
                 data: {
@@ -236,7 +209,6 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
             });
             return newUser;
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, {
             sub: user.id,
         });
@@ -251,7 +223,6 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
             },
             context: auditContext,
         });
-        // Generate tokens with the user's role
         const accessToken = jwt.sign({
             sub: user.id,
             role: user.role,
@@ -273,9 +244,6 @@ export const acceptInvitationEndpoint = publicWithRequestFactory.build({
         };
     },
 });
-/**
- * Validate an invitation token.
- */
 export const validateInvitationEndpoint = publicFactory.build({
     method: 'get',
     shortDescription: 'Validate Invitation',
@@ -302,7 +270,6 @@ export const validateInvitationEndpoint = publicFactory.build({
         if (!invitation) {
             return { valid: false };
         }
-        // Check if user already exists
         const existingUser = await prisma.user.findUnique({
             where: { email: invitation.email },
         });

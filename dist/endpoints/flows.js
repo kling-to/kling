@@ -1,8 +1,3 @@
-/**
- * Flow Endpoints
- *
- * CRUD operations for event-driven flows.
- */
 import { z } from 'zod';
 import { createAuthRoleFactory } from '../factories';
 import prisma from '../utils/prisma';
@@ -14,20 +9,14 @@ import { parseNaturalLanguageToFlowDSL } from '../utils/llm-parser';
 import { calculateFlowRevenue } from '../utils/revenue-attribution';
 const managerFactory = createAuthRoleFactory('admin', 'manager');
 const staffFactory = createAuthRoleFactory('admin', 'manager', 'staff');
-// ------------------------------------------------------
-// SCHEMA DEFINITIONS
-// ------------------------------------------------------
-// React Flow compatible node position
 const flowNodePositionSchema = z.object({
     x: z.number(),
     y: z.number(),
 });
-// React Flow compatible node data
 const flowNodeDataSchema = z.object({
     label: z.string(),
     config: z.record(z.string(), z.unknown()),
 });
-// React Flow compatible node structure
 const flowNodeSchema = z.object({
     id: z.string(),
     type: z.enum([
@@ -44,7 +33,6 @@ const flowNodeSchema = z.object({
     position: flowNodePositionSchema,
     data: flowNodeDataSchema,
 });
-// React Flow compatible edge structure
 const flowEdgeSchema = z.object({
     id: z.string(),
     source: z.string(),
@@ -89,17 +77,12 @@ const flowOutputSchema = z.object({
     createdAt: z.string(),
     updatedAt: z.string(),
 });
-// ------------------------------------------------------
-// VALIDATION HELPERS
-// ------------------------------------------------------
 function validateFlowDefinition(definition) {
     const { nodes, edges, startNodeId } = definition;
-    // Check startNodeId exists
     const startNode = nodes.find((n) => n.id === startNodeId);
     if (!startNode) {
         throw createHttpError(400, 'startNodeId does not match any node');
     }
-    // Validate edges reference valid nodes (React Flow uses source/target)
     for (const edge of edges) {
         const sourceNode = nodes.find((n) => n.id === edge.source);
         const targetNode = nodes.find((n) => n.id === edge.target);
@@ -110,12 +93,10 @@ function validateFlowDefinition(definition) {
             throw createHttpError(400, `Edge ${edge.id} references invalid 'target' node: ${edge.target}`);
         }
     }
-    // Validate node configs (config is now in node.data.config)
     for (const node of nodes) {
         const config = node.data?.config ?? {};
         switch (node.type) {
             case 'trigger':
-                // Trigger node - no required config, just marks the start
                 break;
             case 'send_email':
                 if (!config.subject || !config.body) {
@@ -153,14 +134,10 @@ function validateFlowDefinition(definition) {
                 }
                 break;
             case 'exit_flow':
-                // No required config
                 break;
         }
     }
 }
-// ------------------------------------------------------
-// CREATE FLOW
-// ------------------------------------------------------
 export const createFlowEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Create Flow',
@@ -182,7 +159,6 @@ export const createFlowEndpoint = managerFactory.build({
     }),
     handler: async ({ input, ctx }) => {
         const userId = ctx.user.sub;
-        // Validate flow definition
         validateFlowDefinition(input.definition);
         const flow = await prisma.flow.create({
             data: {
@@ -192,7 +168,7 @@ export const createFlowEndpoint = managerFactory.build({
                 triggerType: input.triggerType,
                 triggerConfig: input.triggerConfig ? JSON.parse(JSON.stringify(input.triggerConfig)) : null,
                 definition: JSON.parse(JSON.stringify(input.definition)),
-                status: 'paused', // Start paused, user must activate
+                status: 'paused',
                 allowReenrollment: input.allowReenrollment,
                 reenrollmentWaitDays: input.reenrollmentWaitDays || null,
                 maxEnrollments: input.maxEnrollments || null,
@@ -218,9 +194,6 @@ export const createFlowEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// LIST FLOWS
-// ------------------------------------------------------
 export const listFlowsEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'List Flows',
@@ -252,9 +225,6 @@ export const listFlowsEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// GET FLOW
-// ------------------------------------------------------
 export const getFlowEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Flow',
@@ -275,7 +245,6 @@ export const getFlowEndpoint = staffFactory.build({
         if (!flow) {
             throw createHttpError(404, 'Flow not found');
         }
-        // Get enrollment stats
         const [enrollmentCount, activeCount, completedCount] = await Promise.all([
             prisma.flowEnrollment.count({ where: { flowId: flow.id } }),
             prisma.flowEnrollment.count({ where: { flowId: flow.id, status: 'active' } }),
@@ -293,9 +262,6 @@ export const getFlowEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// UPDATE FLOW
-// ------------------------------------------------------
 export const updateFlowEndpoint = managerFactory.build({
     method: 'patch',
     shortDescription: 'Update Flow',
@@ -320,7 +286,6 @@ export const updateFlowEndpoint = managerFactory.build({
         if (!existingFlow) {
             throw createHttpError(404, 'Flow not found');
         }
-        // Validate definition if provided
         if (input.definition) {
             validateFlowDefinition(input.definition);
         }
@@ -358,9 +323,6 @@ export const updateFlowEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PAUSE FLOW
-// ------------------------------------------------------
 export const pauseFlowEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Pause Flow',
@@ -398,9 +360,6 @@ export const pauseFlowEndpoint = managerFactory.build({
         return { success: true, status: 'paused' };
     },
 });
-// ------------------------------------------------------
-// RESUME FLOW
-// ------------------------------------------------------
 export const resumeFlowEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Resume Flow',
@@ -438,9 +397,6 @@ export const resumeFlowEndpoint = managerFactory.build({
         return { success: true, status: 'active' };
     },
 });
-// ------------------------------------------------------
-// DELETE (ARCHIVE) FLOW
-// ------------------------------------------------------
 export const deleteFlowEndpoint = createAuthRoleFactory('admin').build({
     method: 'delete',
     shortDescription: 'Delete Flow',
@@ -460,12 +416,10 @@ export const deleteFlowEndpoint = createAuthRoleFactory('admin').build({
         if (!flow) {
             throw createHttpError(404, 'Flow not found');
         }
-        // Archive flow
         await prisma.flow.update({
             where: { id: input.flowId },
             data: { status: 'archived' },
         });
-        // Exit all active enrollments
         const result = await prisma.flowEnrollment.updateMany({
             where: { flowId: input.flowId, status: 'active' },
             data: { status: 'exited', exitedAt: new Date() },
@@ -481,9 +435,6 @@ export const deleteFlowEndpoint = createAuthRoleFactory('admin').build({
         return { success: true, exitedEnrollments: result.count };
     },
 });
-// ------------------------------------------------------
-// GET FLOW ENROLLMENTS
-// ------------------------------------------------------
 export const getFlowEnrollmentsEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Flow Enrollments',
@@ -563,9 +514,6 @@ export const getFlowEnrollmentsEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// GET FLOW ANALYTICS
-// ------------------------------------------------------
 export const getFlowAnalyticsEndpoint = managerFactory.build({
     method: 'get',
     shortDescription: 'Get Flow Analytics',
@@ -592,7 +540,6 @@ export const getFlowAnalyticsEndpoint = managerFactory.build({
         const periodDays = { '7d': 7, '14d': 14, '30d': 30, '90d': 90 }[period];
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - periodDays);
-        // Get enrollments within period
         const enrollments = await prisma.flowEnrollment.findMany({
             where: {
                 flowId,
@@ -608,7 +555,6 @@ export const getFlowAnalyticsEndpoint = managerFactory.build({
         const avgStepsCompleted = totalEnrollments > 0
             ? enrollments.reduce((sum, e) => sum + e.stepsCompleted, 0) / totalEnrollments
             : 0;
-        // Calculate avg time to complete
         const completedWithTime = enrollments.filter((e) => e.status === 'completed' && e.completedAt);
         const avgTimeToCompleteSeconds = completedWithTime.length > 0
             ? completedWithTime.reduce((sum, e) => {
@@ -630,9 +576,6 @@ export const getFlowAnalyticsEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// FLOW TEMPLATES
-// ------------------------------------------------------
 const flowTemplateSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -724,7 +667,6 @@ export const createFlowFromTemplateEndpoint = managerFactory.build({
         }
         const flowName = input.name || `${template.name} (Copy)`;
         const flowDescription = input.description || template.description;
-        // Generate a unique idempotency key to avoid conflicts
         const idempotencyKey = `template:${template.id}:${userId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
         const flow = await prisma.flow.create({
             data: {
@@ -762,9 +704,6 @@ export const createFlowFromTemplateEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// NATURAL LANGUAGE FLOW CREATION
-// ------------------------------------------------------
 export const parseFlowNLEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Parse Natural Language Flow',
@@ -795,7 +734,6 @@ export const parseFlowNLEndpoint = managerFactory.build({
                 rejectionCategory: result.rejectionCategory,
             };
         }
-        // If LLM recommended a template, return template info
         if (result.useTemplate && result.templateId) {
             const template = getFlowTemplateById(result.templateId);
             return {
@@ -856,7 +794,6 @@ export const createFlowFromNLEndpoint = managerFactory.build({
                 rejectionReason: result.rejectionReason,
             };
         }
-        // If LLM recommended a template, return template info without creating
         if (result.useTemplate && result.templateId) {
             const template = getFlowTemplateById(result.templateId);
             return {
@@ -879,7 +816,6 @@ export const createFlowFromNLEndpoint = managerFactory.build({
                     : undefined,
             };
         }
-        // Create flow from DSL
         const dsl = result.dsl;
         const flow = await prisma.flow.create({
             data: {
@@ -921,13 +857,7 @@ export const createFlowFromNLEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// FLOW REVENUE ATTRIBUTION
-// ------------------------------------------------------
 const attributionModelSchema = z.enum(['last_touch', 'first_touch', 'linear']);
-/**
- * Get revenue attributed to a flow
- */
 export const getFlowRevenueEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Flow Revenue',
@@ -962,11 +892,9 @@ export const getFlowRevenueEndpoint = staffFactory.build({
         if (!flow) {
             throw createHttpError(404, 'Flow not found');
         }
-        // Count enrollments
         const totalEnrollments = await prisma.flowEnrollment.count({
             where: { flowId: input.flowId },
         });
-        // Calculate revenue with optional overrides
         const config = {};
         if (input.attributionWindow)
             config.windowDays = input.attributionWindow;

@@ -1,12 +1,6 @@
-/**
- * E-commerce integrations module
- * Provides adapters for connecting to various e-commerce platforms
- */
-// Core exports
 export * from './types';
 export { platformRegistry } from './registry';
 export * from './sync-service';
-// Platform adapters
 export { ShopifyAdapter, createShopifyAdapter } from './shopify/adapter';
 export { WooCommerceAdapter, createWooCommerceAdapter } from './woocommerce/adapter';
 export { BigCommerceAdapter, createBigCommerceAdapter } from './bigcommerce/adapter';
@@ -14,7 +8,6 @@ export { WixAdapter, createWixAdapter } from './wix/adapter';
 export { SalesforceAdapter, createSalesforceAdapter } from './salesforce/adapter';
 export { MagentoAdapter, createMagentoAdapter } from './magento/adapter';
 export { SquareAdapter, createSquareAdapter } from './square/adapter';
-// Initialization function
 import { platformRegistry } from './registry';
 import { createShopifyAdapter } from './shopify/adapter';
 import { createWooCommerceAdapter } from './woocommerce/adapter';
@@ -23,12 +16,7 @@ import { createWixAdapter } from './wix/adapter';
 import { createSalesforceAdapter } from './salesforce/adapter';
 import { createMagentoAdapter } from './magento/adapter';
 import { createSquareAdapter } from './square/adapter';
-/**
- * Initialize platform adapters from environment configuration
- * Call this during server startup
- */
 export function initializeIntegrations() {
-    // Initialize Shopify if configured
     const shopifyApiKey = process.env.SHOPIFY_API_KEY;
     const shopifyApiSecret = process.env.SHOPIFY_API_SECRET;
     if (shopifyApiKey && shopifyApiSecret) {
@@ -53,7 +41,6 @@ export function initializeIntegrations() {
         });
         console.log('✓ Shopify integration initialized');
     }
-    // Initialize WooCommerce (always available, uses per-store credentials)
     const wooAdapter = createWooCommerceAdapter();
     platformRegistry.register(wooAdapter, {
         platform: 'WOOCOMMERCE',
@@ -61,7 +48,6 @@ export function initializeIntegrations() {
         webhookTopics: ['customer.created', 'customer.updated', 'order.created', 'order.updated'],
     });
     console.log('✓ WooCommerce integration initialized');
-    // Initialize BigCommerce if configured
     const bcClientId = process.env.BIGCOMMERCE_CLIENT_ID;
     const bcClientSecret = process.env.BIGCOMMERCE_CLIENT_SECRET;
     if (bcClientId && bcClientSecret) {
@@ -83,7 +69,6 @@ export function initializeIntegrations() {
         });
         console.log('✓ BigCommerce integration initialized');
     }
-    // Initialize Wix if configured
     const wixAppId = process.env.WIX_APP_ID;
     const wixAppSecret = process.env.WIX_APP_SECRET;
     if (wixAppId && wixAppSecret) {
@@ -105,7 +90,6 @@ export function initializeIntegrations() {
         });
         console.log('✓ Wix integration initialized');
     }
-    // Initialize Salesforce if configured
     const sfClientId = process.env.SALESFORCE_CLIENT_ID;
     const sfClientSecret = process.env.SALESFORCE_CLIENT_SECRET;
     if (sfClientId && sfClientSecret) {
@@ -123,7 +107,6 @@ export function initializeIntegrations() {
         });
         console.log('✓ Salesforce integration initialized');
     }
-    // Initialize Magento (always available, uses per-store tokens)
     const magentoAdapter = createMagentoAdapter();
     platformRegistry.register(magentoAdapter, {
         platform: 'MAGENTO',
@@ -136,7 +119,6 @@ export function initializeIntegrations() {
         ],
     });
     console.log('✓ Magento integration initialized');
-    // Initialize Square if configured
     const squareAppId = process.env.SQUARE_APPLICATION_ID;
     const squareAppSecret = process.env.SQUARE_APPLICATION_SECRET;
     if (squareAppId && squareAppSecret) {

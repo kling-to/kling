@@ -1,49 +1,29 @@
-/**
- * Multi-Channel Fallback
- *
- * Enables automatic fallback to alternative channels when primary channel fails.
- * For example: email → sms
- */
 import prisma from './prisma';
 import { checkEligibility } from './eligibility';
-/**
- * Default channel fallback order
- * Primary channel attempts first, then falls back to alternatives
- */
 export const DEFAULT_FALLBACK_ORDER = {
     email: ['push', 'sms', 'whatsapp'],
     sms: ['whatsapp', 'push', 'email'],
     whatsapp: ['sms', 'push', 'email'],
-    rcs: ['sms', 'whatsapp', 'push'], // RCS naturally falls back to SMS
+    rcs: ['sms', 'whatsapp', 'push'],
     push: ['email', 'sms', 'whatsapp'],
 };
-/**
- * Default fallback configuration
- */
 export const DEFAULT_FALLBACK_CONFIG = {
     enabled: true,
-    maxAttempts: 2, // Try up to 2 fallback channels
-    delayBetweenAttempts: 0, // No delay (immediate fallback)
+    maxAttempts: 2,
+    delayBetweenAttempts: 0,
     onlyOnPermanentFailure: true,
 };
-/**
- * Get available fallback channels for a customer
- * Checks eligibility for each potential fallback channel
- */
 export async function getAvailableFallbackChannels(customer, primaryChannel, config, fallbackConfig = DEFAULT_FALLBACK_CONFIG) {
     if (!fallbackConfig.enabled) {
         return [];
     }
-    // Get fallback order
     const fallbackOrder = fallbackConfig.fallbackOrder || DEFAULT_FALLBACK_ORDER[primaryChannel] || [];
     const maxAttempts = fallbackConfig.maxAttempts || 2;
     const availableChannels = [];
-    // Check eligibility for each fallback channel
     for (const channel of fallbackOrder) {
         if (availableChannels.length >= maxAttempts) {
             break;
         }
-        // Skip if customer doesn't have contact info for this channel
         if (channel === 'email' && !customer.email) {
             continue;
         }
@@ -59,7 +39,6 @@ export async function getAvailableFallbackChannels(customer, primaryChannel, con
         if (channel === 'push' && !customer.pushToken) {
             continue;
         }
-        // Check eligibility for this channel
         const eligibilityResult = await checkEligibility(customer, {
             ...config,
             channel,
@@ -70,21 +49,16 @@ export async function getAvailableFallbackChannels(customer, primaryChannel, con
     }
     return availableChannels;
 }
-/**
- * Determine the next fallback channel to try
- */
 export function getNextFallbackChannel(attemptedChannels, primaryChannel, fallbackConfig = DEFAULT_FALLBACK_CONFIG) {
     if (!fallbackConfig.enabled) {
         return null;
     }
     const fallbackOrder = fallbackConfig.fallbackOrder || DEFAULT_FALLBACK_ORDER[primaryChannel] || [];
     const maxAttempts = fallbackConfig.maxAttempts || 2;
-    // Count fallback attempts (exclude primary channel)
     const fallbackAttempts = attemptedChannels.filter((c) => c !== primaryChannel).length;
     if (fallbackAttempts >= maxAttempts) {
         return null;
     }
-    // Find next channel that hasn't been tried
     for (const channel of fallbackOrder) {
         if (!attemptedChannels.includes(channel)) {
             return channel;
@@ -92,18 +66,13 @@ export function getNextFallbackChannel(attemptedChannels, primaryChannel, fallba
     }
     return null;
 }
-/**
- * Check if a failure should trigger fallback
- */
 export function shouldTriggerFallback(errorMessage, isRetryable, fallbackConfig = DEFAULT_FALLBACK_CONFIG) {
     if (!fallbackConfig.enabled) {
         return false;
     }
-    // If we only fallback on permanent failures, check retryable flag
     if (fallbackConfig.onlyOnPermanentFailure && isRetryable) {
         return false;
     }
-    // Common permanent failure patterns that should trigger fallback
     const permanentFailurePatterns = [
         'invalid_email',
         'invalid_phone',
@@ -118,11 +87,7 @@ export function shouldTriggerFallback(errorMessage, isRetryable, fallbackConfig 
     const lowerError = errorMessage.toLowerCase();
     return permanentFailurePatterns.some((pattern) => lowerError.includes(pattern));
 }
-/**
- * Create a fallback message log entry
- */
 export async function createFallbackMessageLog(originalMessageLogId, fallbackChannel, reason) {
-    // Get original message log
     const originalLog = await prisma.messageLog.findUnique({
         where: { id: originalMessageLogId },
         select: {
@@ -137,7 +102,6 @@ export async function createFallbackMessageLog(originalMessageLogId, fallbackCha
     if (!originalLog) {
         throw new Error('Original message log not found');
     }
-    // Get customer contact info for fallback channel
     const customer = await prisma.customer.findUnique({
         where: { id: originalLog.customerId },
         select: { email: true, phone: true, whatsappNumber: true, pushToken: true },
@@ -166,7 +130,6 @@ export async function createFallbackMessageLog(originalMessageLogId, fallbackCha
     if (!recipient) {
         throw new Error(`No contact info for fallback channel ${fallbackChannel}`);
     }
-    // Create new message log for fallback
     const fallbackLog = await prisma.messageLog.create({
         data: {
             campaignId: originalLog.campaignId,
@@ -181,7 +144,6 @@ export async function createFallbackMessageLog(originalMessageLogId, fallbackCha
             correlationId: `fallback_${originalMessageLogId}`,
         },
     });
-    // Update original log to note the fallback
     await prisma.messageLog.update({
         where: { id: originalMessageLogId },
         data: {
@@ -190,9 +152,6 @@ export async function createFallbackMessageLog(originalMessageLogId, fallbackCha
     });
     return fallbackLog.id;
 }
-/**
- * Get fallback history for a message
- */
 export async function getFallbackHistory(originalMessageLogId) {
     const fallbackLogs = await prisma.messageLog.findMany({
         where: {
@@ -211,9 +170,6 @@ export async function getFallbackHistory(originalMessageLogId) {
         timestamp: log.createdAt,
     }));
 }
-/**
- * Check if all fallback channels have been exhausted
- */
 export function areFallbacksExhausted(attemptedChannels, primaryChannel, fallbackConfig = DEFAULT_FALLBACK_CONFIG) {
     if (!fallbackConfig.enabled) {
         return true;

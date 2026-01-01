@@ -1,18 +1,6 @@
-/**
- * Promotion DSL Parser
- *
- * Converts natural language descriptions into discount/gift DSL
- * using OpenAI's API with structured outputs.
- *
- * Note: This parser is primarily used by the campaign natural language
- * endpoint to parse embedded promotion data. With promotions merged into
- * campaigns, the output DSL is used to populate campaign.discount and
- * campaign.gift fields rather than creating standalone promotion entities.
- */
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
-// Lazy initialize OpenAI client
 let openai = null;
 function getOpenAIClient() {
     if (!openai && process.env.OPENAI_API_KEY) {
@@ -22,32 +10,21 @@ function getOpenAIClient() {
     }
     return openai;
 }
-/**
- * Action schema for discounts and gifts
- */
 export const ActionSchema = z.object({
     type: z.enum(['discount', 'gift']),
-    // Discount-specific fields
     discountType: z.enum(['percentage', 'fixed_amount', 'free_shipping']).nullable(),
-    discountValue: z.number().nullable(), // <1 for percentage (0.1 = 10%), >=1 for fixed
-    // Gift-specific fields
+    discountValue: z.number().nullable(),
     giftType: z.enum(['free_sku', 'free_sample', 'redemption_code']).nullable(),
     sku: z.string().nullable(),
     giftValue: z.number().nullable(),
     code: z.string().nullable(),
 });
-/**
- * Constraints schema
- */
 export const ConstraintsSchema = z.object({
-    maxUsesTotal: z.number().nullable(), // Global cap
-    maxUsesPerCustomer: z.number().nullable(), // Per-customer limit
-    minOrderValue: z.number().nullable(), // Minimum order value
-    stackable: z.boolean().nullable(), // Can combine with other promotions
+    maxUsesTotal: z.number().nullable(),
+    maxUsesPerCustomer: z.number().nullable(),
+    minOrderValue: z.number().nullable(),
+    stackable: z.boolean().nullable(),
 });
-/**
- * Schema for parsed promotion DSL
- */
 export const PromotionDSLSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
@@ -64,21 +41,15 @@ export const PromotionDSLSchema = z.object({
     constraints: ConstraintsSchema.nullable(),
     testPreview: z.boolean(),
 });
-/**
- * LLM response schema for structured outputs
- */
 const LLMPromotionResponseSchema = z.object({
     valid: z.boolean(),
-    // Rejection fields
     rejected: z.boolean().nullable(),
     reason: z.string().nullable(),
     category: z
         .enum(['gibberish', 'unrelated', 'unsafe', 'impossible', 'malicious', 'ambiguous'])
         .nullable(),
-    // Promotion fields
     name: z.string().nullable(),
     description: z.string().nullable(),
-    // Action
     actionType: z.enum(['discount', 'gift']).nullable(),
     discountType: z.enum(['percentage', 'fixed_amount', 'free_shipping']).nullable(),
     discountValue: z.number().nullable(),
@@ -86,27 +57,19 @@ const LLMPromotionResponseSchema = z.object({
     sku: z.string().nullable(),
     giftValue: z.number().nullable(),
     code: z.string().nullable(),
-    // Query
     queryJson: z.string().nullable(),
-    // Schedule
     cron: z.string().nullable(),
     startAt: z.string().nullable(),
     endAt: z.string().nullable(),
     immediate: z.boolean().nullable(),
-    // Message
     messageTemplate: z.string().nullable(),
     channel: z.enum(['email', 'sms']).nullable(),
-    // Constraints
     maxUsesTotal: z.number().nullable(),
     maxUsesPerCustomer: z.number().nullable(),
     minOrderValue: z.number().nullable(),
     stackable: z.boolean().nullable(),
-    // Test flag
     testPreview: z.boolean().nullable(),
 });
-/**
- * System prompt for promotion DSL generation
- */
 const PROMOTION_SYSTEM_PROMPT = `You are a promotion DSL generator for a customer engagement platform.
 Convert natural language descriptions into structured JSON for discounts and gifts.
 
@@ -201,9 +164,6 @@ REJECTION CRITERIA:
 6. AMBIGUOUS: Unclear discount amount or target ("give a big discount")
 
 Only output valid JSON, no explanations.`;
-/**
- * Parse natural language into promotion DSL
- */
 export async function parseNaturalLanguageToPromotionDSL(prompt, timezone = 'UTC') {
     const client = getOpenAIClient();
     if (!client) {
@@ -249,7 +209,6 @@ Convert this promotion description to JSON:
             };
         }
         const rawResponse = response.output_text;
-        // Check rejection
         if (parsed.valid === false && parsed.rejected === true) {
             return {
                 success: false,
@@ -259,7 +218,6 @@ Convert this promotion description to JSON:
                 rawResponse,
             };
         }
-        // Validate required fields
         if (!parsed.name ||
             !parsed.actionType ||
             !parsed.queryJson ||
@@ -273,7 +231,6 @@ Convert this promotion description to JSON:
                 rawResponse,
             };
         }
-        // Parse query JSON
         let query;
         try {
             query = JSON.parse(parsed.queryJson);
@@ -285,7 +242,6 @@ Convert this promotion description to JSON:
                 rawResponse,
             };
         }
-        // Build the action object
         const action = {
             type: parsed.actionType,
             discountType: parsed.discountType,
@@ -295,7 +251,6 @@ Convert this promotion description to JSON:
             giftValue: parsed.giftValue,
             code: parsed.code,
         };
-        // Build constraints
         const constraints = parsed.maxUsesTotal ||
             parsed.maxUsesPerCustomer ||
             parsed.minOrderValue ||
@@ -307,7 +262,6 @@ Convert this promotion description to JSON:
                 stackable: parsed.stackable,
             }
             : null;
-        // Build the DSL
         const dsl = {
             name: parsed.name,
             description: parsed.description,
@@ -338,9 +292,6 @@ Convert this promotion description to JSON:
         };
     }
 }
-/**
- * Process relative date strings in query to actual ISO dates
- */
 function processRelativeDates(obj) {
     const result = {};
     for (const [key, value] of Object.entries(obj)) {
@@ -370,9 +321,6 @@ function processRelativeDates(obj) {
     }
     return result;
 }
-/**
- * Convert discount type string to DiscountType enum
- */
 export function parseDiscountType(type) {
     const typeMap = {
         percentage: 'percentage',
@@ -381,9 +329,6 @@ export function parseDiscountType(type) {
     };
     return typeMap[type.toLowerCase()] || 'percentage';
 }
-/**
- * Convert gift type string to GiftType enum
- */
 export function parseGiftType(type) {
     const typeMap = {
         free_sku: 'free_sku',
@@ -392,9 +337,6 @@ export function parseGiftType(type) {
     };
     return typeMap[type.toLowerCase()] || 'redemption_code';
 }
-/**
- * Convert channel string to MessageChannel enum
- */
 export function parseChannel(channel) {
     const channelMap = {
         email: 'email',

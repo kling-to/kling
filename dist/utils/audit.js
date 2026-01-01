@@ -1,8 +1,4 @@
 import prisma from './prisma';
-/**
- * Create an immutable audit log entry.
- * Audit logs are append-only and should never be modified or deleted.
- */
 export async function createAuditLog(options) {
     const { action, resourceType, resourceId, metadata, context } = options;
     await prisma.auditLog.create({
@@ -18,9 +14,6 @@ export async function createAuditLog(options) {
         },
     });
 }
-/**
- * Helper to extract audit context from an express-zod-api request.
- */
 export function extractAuditContext(request, user) {
     const getHeader = (name) => {
         const value = request.headers[name.toLowerCase()];
@@ -33,9 +26,6 @@ export function extractAuditContext(request, user) {
         requestId: getHeader('x-request-id'),
     };
 }
-/**
- * Audit log actions grouped by category for reference.
- */
 export const AuditActions = {
     auth: {
         register: 'user_registered',

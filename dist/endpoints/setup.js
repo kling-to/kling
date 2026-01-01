@@ -1,9 +1,3 @@
-/**
- * Setup Endpoints
- *
- * These endpoints handle first-time setup of the installation.
- * The setup flow allows the first user to create an admin account.
- */
 import { z } from 'zod';
 import { publicFactory } from '../factories';
 import prisma from '../utils/prisma';
@@ -13,11 +7,6 @@ const BCRYPT_ROUNDS = 10;
 const getJwtSecret = () => process.env.JWT_SECRET || 'dev-secret';
 const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || '15m';
 const getRefreshTokenExpiresIn = () => process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
-/**
- * Check if setup is required
- *
- * Returns true if no users exist in the database (first-time setup needed)
- */
 export const setupStatusEndpoint = publicFactory.build({
     method: 'get',
     shortDescription: 'Check Setup Status',
@@ -34,12 +23,6 @@ export const setupStatusEndpoint = publicFactory.build({
         };
     },
 });
-/**
- * Create the first admin user
- *
- * This endpoint only works when no users exist in the database.
- * It creates an admin user and returns JWT tokens for immediate login.
- */
 export const createAdminEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'Create Admin Account',
@@ -66,18 +49,13 @@ export const createAdminEndpoint = publicFactory.build({
     }),
     handler: async ({ input }) => {
         const { email, password, name } = input;
-        // Use a transaction to prevent race conditions
-        // Check user count and create atomically
         try {
             const result = await prisma.$transaction(async (tx) => {
-                // Check if any users exist
                 const userCount = await tx.user.count();
                 if (userCount > 0) {
                     throw new Error('Setup has already been completed');
                 }
-                // Hash password
                 const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-                // Create admin user
                 const user = await tx.user.create({
                     data: {
                         email,
@@ -88,7 +66,6 @@ export const createAdminEndpoint = publicFactory.build({
                 });
                 return user;
             });
-            // Generate tokens (matching auth.ts format)
             const jwtRole = result.role.toLowerCase();
             const accessToken = jwt.sign({
                 sub: result.id,

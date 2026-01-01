@@ -1,12 +1,8 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
 const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32; // 256 bits
+const KEY_LENGTH = 32;
 const IV_LENGTH = 16;
-/**
- * Get encryption key from environment
- * Supports dual-key rotation via ENCRYPTION_KEY and ENCRYPTION_KEY_OLD
- */
 function getEncryptionKey() {
     const key = process.env.ENCRYPTION_KEY;
     if (!key) {
@@ -29,10 +25,6 @@ function getOldEncryptionKey() {
     }
     return keyBuffer;
 }
-/**
- * Encrypt sensitive data
- * Returns format: iv:authTag:encryptedData (all hex-encoded)
- */
 export function encrypt(plaintext) {
     if (!plaintext)
         return '';
@@ -43,25 +35,18 @@ export function encrypt(plaintext) {
     const authTag = cipher.getAuthTag();
     return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
-/**
- * Decrypt sensitive data
- * Supports automatic key rotation by trying old key if current key fails
- */
 export function decrypt(encryptedText) {
     if (!encryptedText)
         return '';
     const parts = encryptedText.split(':');
     if (parts.length !== 3) {
-        // Not encrypted, return as-is (for backward compatibility)
         return encryptedText;
     }
     const [ivHex, authTagHex, encrypted] = parts;
-    // Try current key first
     try {
         return decryptWithKey(getEncryptionKey(), ivHex, authTagHex, encrypted);
     }
     catch (err) {
-        // Try old key if available (for rotation)
         const oldKey = getOldEncryptionKey();
         if (oldKey) {
             logger.info('Attempting decryption with old key (key rotation in progress)');
@@ -79,33 +64,21 @@ function decryptWithKey(key, ivHex, authTagHex, encrypted) {
     decrypted += decipher.final('utf8');
     return decrypted;
 }
-/**
- * Generate new encryption key (for initial setup or rotation)
- */
 export function generateEncryptionKey() {
     return crypto.randomBytes(KEY_LENGTH).toString('hex');
 }
-/**
- * Check if value is encrypted (has correct format)
- */
 export function isEncrypted(value) {
     if (!value)
         return false;
     const parts = value.split(':');
     return parts.length === 3 && parts.every((part) => /^[0-9a-f]+$/i.test(part));
 }
-/**
- * Mask secret for display (show first 4 and last 4 chars)
- */
 export function maskSecret(secret) {
     if (!secret || secret.length <= 8) {
         return '*'.repeat(secret?.length || 8);
     }
     return `${secret.slice(0, 4)}${'*'.repeat(secret.length - 8)}${secret.slice(-4)}`;
 }
-/**
- * Check if encryption is configured
- */
 export function isEncryptionConfigured() {
     return !!process.env.ENCRYPTION_KEY;
 }

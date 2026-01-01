@@ -1,18 +1,10 @@
-/**
- * Sync service for processing data from e-commerce platforms
- * Handles customer and order upserts with proper deduplication
- */
 import prisma from '../utils/prisma';
 import { createAuditLog, AuditActions } from '../utils/audit';
-/**
- * Upsert a customer from an external platform
- */
 export async function upsertCustomerFromPlatform(input) {
     const existing = await prisma.customer.findFirst({
         where: { externalId: input.externalId },
     });
     if (existing) {
-        // Update existing customer
         const existingMetadata = existing.metadata || {};
         const updated = await prisma.customer.update({
             where: { id: existing.id },
@@ -30,7 +22,6 @@ export async function upsertCustomerFromPlatform(input) {
         });
         return { id: updated.id, created: false };
     }
-    // Create new customer
     const created = await prisma.customer.create({
         data: {
             externalId: input.externalId,
@@ -45,18 +36,13 @@ export async function upsertCustomerFromPlatform(input) {
     });
     return { id: created.id, created: true };
 }
-/**
- * Upsert an order from an external platform
- */
 export async function upsertOrderFromPlatform(input) {
-    // First, find or create the customer
     const customer = await prisma.customer.findFirst({
         where: { externalId: input.customerExternalId },
     });
     if (!customer) {
         throw new Error(`Customer not found for external ID: ${input.customerExternalId}`);
     }
-    // Check for existing order by matching customer + timestamp
     const existingOrder = await prisma.order.findFirst({
         where: {
             customerId: customer.id,
@@ -81,7 +67,6 @@ export async function upsertOrderFromPlatform(input) {
         }
     };
     if (existingOrder) {
-        // Update existing order
         const updated = await prisma.order.update({
             where: { id: existingOrder.id },
             data: {
@@ -90,11 +75,9 @@ export async function upsertOrderFromPlatform(input) {
                 couponCode: input.couponCode,
             },
         });
-        // Update customer stats
         await updateCustomerStats(customer.id);
         return { id: updated.id, created: false };
     }
-    // Create new order with items
     const created = await prisma.order.create({
         data: {
             customerId: customer.id,
@@ -116,13 +99,9 @@ export async function upsertOrderFromPlatform(input) {
             },
         },
     });
-    // Update customer stats
     await updateCustomerStats(customer.id);
     return { id: created.id, created: true };
 }
-/**
- * Update customer aggregate stats (totalOrders, totalSpent, lastOrderAt)
- */
 async function updateCustomerStats(customerId) {
     const stats = await prisma.order.aggregate({
         where: {
@@ -142,9 +121,6 @@ async function updateCustomerStats(customerId) {
         },
     });
 }
-/**
- * Batch sync customers from a platform
- */
 export async function syncCustomersBatch(customers, integration, userId) {
     const errors = [];
     let created = 0;
@@ -166,7 +142,6 @@ export async function syncCustomersBatch(customers, integration, userId) {
             });
         }
     }
-    // Log sync completion
     await createAuditLog({
         action: AuditActions.integration.syncCompleted,
         resourceType: 'integration',
@@ -189,9 +164,6 @@ export async function syncCustomersBatch(customers, integration, userId) {
         errors,
     };
 }
-/**
- * Batch sync orders from a platform
- */
 export async function syncOrdersBatch(orders, integration, userId) {
     const errors = [];
     let created = 0;
@@ -213,7 +185,6 @@ export async function syncOrdersBatch(orders, integration, userId) {
             });
         }
     }
-    // Log sync completion
     await createAuditLog({
         action: AuditActions.integration.syncCompleted,
         resourceType: 'integration',
@@ -236,9 +207,6 @@ export async function syncOrdersBatch(orders, integration, userId) {
         errors,
     };
 }
-/**
- * Create a sync log entry
- */
 export async function createSyncLog(integrationId, entityType, direction) {
     const log = await prisma.integrationSyncLog.create({
         data: {
@@ -251,9 +219,6 @@ export async function createSyncLog(integrationId, entityType, direction) {
     });
     return log.id;
 }
-/**
- * Update a sync log entry with results
- */
 export async function completeSyncLog(logId, result) {
     const errorDetails = result.errors.length > 0
         ? result.errors.slice(0, 10).map((e) => ({

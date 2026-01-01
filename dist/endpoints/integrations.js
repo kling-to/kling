@@ -1,6 +1,3 @@
-/**
- * Integration endpoints for connecting e-commerce platforms
- */
 import { z } from 'zod';
 import createHttpError from 'http-errors';
 import crypto from 'crypto';
@@ -11,9 +8,6 @@ import { platformRegistry } from '../integrations/registry';
 import { syncCustomersBatch, syncOrdersBatch, createSyncLog, completeSyncLog, } from '../integrations/sync-service';
 import { objectIdSchema } from '../utils/validation';
 const adminFactory = createAuthRoleFactory('admin');
-// ------------------------------------------------------
-// Schemas
-// ------------------------------------------------------
 const integrationSchema = z.object({
     id: z.string(),
     platform: z.enum([
@@ -37,9 +31,6 @@ const integrationSchema = z.object({
     createdAt: z.date(),
     updatedAt: z.date(),
 });
-// ------------------------------------------------------
-// List integrations
-// ------------------------------------------------------
 export const listIntegrationsEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List integrations',
@@ -73,9 +64,6 @@ export const listIntegrationsEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// Get integration details
-// ------------------------------------------------------
 export const getIntegrationEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get integration',
@@ -145,9 +133,6 @@ export const getIntegrationEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// Delete integration
-// ------------------------------------------------------
 export const deleteIntegrationEndpoint = adminFactory.build({
     method: 'delete',
     shortDescription: 'Delete integration',
@@ -166,7 +151,6 @@ export const deleteIntegrationEndpoint = adminFactory.build({
         if (!integration) {
             throw createHttpError(404, 'Integration not found');
         }
-        // Try to unregister webhooks if we have the adapter and token
         if (integration.accessToken && integration.webhookIds.length > 0) {
             try {
                 const adapter = platformRegistry.getAdapter(integration.platform);
@@ -176,10 +160,8 @@ export const deleteIntegrationEndpoint = adminFactory.build({
             }
             catch (error) {
                 console.error('Failed to unregister webhooks:', error);
-                // Continue with deletion anyway
             }
         }
-        // Delete integration (cascades to sync logs)
         await prisma.integration.delete({
             where: { id: input.integrationId },
         });
@@ -196,9 +178,6 @@ export const deleteIntegrationEndpoint = adminFactory.build({
         return { success: true };
     },
 });
-// ------------------------------------------------------
-// Trigger manual sync
-// ------------------------------------------------------
 export const triggerSyncEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Trigger sync',
@@ -226,7 +205,6 @@ export const triggerSyncEndpoint = adminFactory.build({
         if (!adapter) {
             throw createHttpError(400, `No adapter available for ${integration.platform}`);
         }
-        // Update status to syncing
         await prisma.integration.update({
             where: { id: integration.id },
             data: { syncStatus: 'SYNCING' },
@@ -239,10 +217,8 @@ export const triggerSyncEndpoint = adminFactory.build({
             context: { userId: ctx.user.sub },
         });
         const entityTypes = input.entityTypes || ['customers', 'orders'];
-        // Run sync in background (non-blocking)
         (async () => {
             try {
-                // Sync customers first if requested
                 if (entityTypes.includes('customers') && integration.syncCustomers) {
                     const logId = await createSyncLog(integration.id, 'customers', 'inbound');
                     let cursor;
@@ -267,7 +243,6 @@ export const triggerSyncEndpoint = adminFactory.build({
                     } while (cursor);
                     await completeSyncLog(logId, totalResult);
                 }
-                // Sync orders if requested
                 if (entityTypes.includes('orders') && integration.syncOrders) {
                     const logId = await createSyncLog(integration.id, 'orders', 'inbound');
                     let cursor;
@@ -292,7 +267,6 @@ export const triggerSyncEndpoint = adminFactory.build({
                     } while (cursor);
                     await completeSyncLog(logId, totalResult);
                 }
-                // Update integration status
                 await prisma.integration.update({
                     where: { id: integration.id },
                     data: {
@@ -329,9 +303,6 @@ export const triggerSyncEndpoint = adminFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// Shopify OAuth endpoints
-// ------------------------------------------------------
 export const shopifyInstallEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Start Shopify OAuth',
@@ -349,9 +320,7 @@ export const shopifyInstallEndpoint = adminFactory.build({
         if (!adapter) {
             throw createHttpError(501, 'Shopify integration not configured');
         }
-        // Generate state for CSRF protection
         const state = crypto.randomBytes(16).toString('hex');
-        // Get base URL from environment or default
         const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
         const redirectUri = `${baseUrl}/v1/integrations/shopify/callback`;
         const authUrl = adapter.getAuthUrl(input.shop, redirectUri, state);
@@ -379,15 +348,11 @@ export const shopifyCallbackEndpoint = publicWithRequestFactory.build({
         if (!adapter) {
             throw createHttpError(501, 'Shopify integration not configured');
         }
-        // TODO: Validate state against session/database stored value
-        // For now, we proceed with the exchange
         const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
         const redirectUri = `${baseUrl}/v1/integrations/shopify/callback`;
         try {
             const tokens = await adapter.exchangeCodeForToken(input.shop, input.code, redirectUri);
-            // Generate webhook secret
             const webhookSecret = crypto.randomBytes(32).toString('hex');
-            // Create or update integration
             const integration = await prisma.integration.upsert({
                 where: {
                     platform_shopDomain: {
@@ -405,7 +370,7 @@ export const shopifyCallbackEndpoint = publicWithRequestFactory.build({
                     scopes: tokens.scopes,
                     webhookSecret,
                     syncStatus: 'PENDING',
-                    createdBy: 'system', // TODO: Get from session
+                    createdBy: 'system',
                 },
                 update: {
                     accessToken: tokens.accessToken,
@@ -416,10 +381,8 @@ export const shopifyCallbackEndpoint = publicWithRequestFactory.build({
                     syncStatus: 'PENDING',
                 },
             });
-            // Register webhooks
             const webhookCallbackUrl = `${baseUrl}/v1/integrations/shopify/webhooks`;
             const webhookIds = await adapter.registerWebhooks(input.shop, tokens.accessToken, webhookCallbackUrl);
-            // Update with webhook IDs
             await prisma.integration.update({
                 where: { id: integration.id },
                 data: { webhookIds },
@@ -447,9 +410,6 @@ export const shopifyCallbackEndpoint = publicWithRequestFactory.build({
         }
     },
 });
-// ------------------------------------------------------
-// Shopify webhooks endpoint
-// ------------------------------------------------------
 export const shopifyWebhookEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Shopify webhook handler',
@@ -466,7 +426,6 @@ export const shopifyWebhookEndpoint = publicWithRequestFactory.build({
         if (!shopDomain || !hmacHeader || !topic) {
             throw createHttpError(400, 'Missing required Shopify headers');
         }
-        // Find integration
         const integration = await prisma.integration.findFirst({
             where: {
                 platform: 'SHOPIFY',
@@ -476,7 +435,6 @@ export const shopifyWebhookEndpoint = publicWithRequestFactory.build({
         if (!integration || !integration.webhookSecret) {
             throw createHttpError(404, 'Integration not found');
         }
-        // Verify webhook signature
         const adapter = platformRegistry.getAdapter('SHOPIFY');
         if (!adapter) {
             throw createHttpError(501, 'Shopify adapter not available');
@@ -486,21 +444,15 @@ export const shopifyWebhookEndpoint = publicWithRequestFactory.build({
         if (!isValid) {
             throw createHttpError(401, 'Invalid webhook signature');
         }
-        // Process webhook based on topic
         const payload = adapter.parseWebhookPayload(topic, ctx.request.body);
         if (payload) {
-            // Handle different payload types
             if ('customerExternalId' in payload && 'purchasedAt' in payload) {
-                // It's an order (has purchasedAt, unlike Cart)
                 await syncOrdersBatch([payload], integration);
             }
             else if ('externalId' in payload && !('customerExternalId' in payload)) {
-                // It's a customer (has externalId but no customerExternalId)
                 await syncCustomersBatch([payload], integration);
             }
-            // Carts are ignored for now - they would need separate handling
         }
-        // Handle app uninstall
         if (topic === 'app/uninstalled') {
             await prisma.integration.update({
                 where: { id: integration.id },
@@ -527,9 +479,6 @@ export const shopifyWebhookEndpoint = publicWithRequestFactory.build({
         return { received: true };
     },
 });
-// ------------------------------------------------------
-// WooCommerce connect endpoint (API key based)
-// ------------------------------------------------------
 export const woocommerceConnectEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Connect WooCommerce',
@@ -547,9 +496,7 @@ export const woocommerceConnectEndpoint = adminFactory.build({
         message: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Normalize site URL
         const siteUrl = input.siteUrl.replace(/\/$/, '');
-        // Verify credentials by making a test API call
         try {
             const auth = Buffer.from(`${input.consumerKey}:${input.consumerSecret}`).toString('base64');
             const response = await fetch(`${siteUrl}/wp-json/wc/v3/system_status`, {
@@ -562,9 +509,7 @@ export const woocommerceConnectEndpoint = adminFactory.build({
         catch (error) {
             throw createHttpError(400, `Failed to connect to WooCommerce: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-        // Generate webhook secret
         const webhookSecret = crypto.randomBytes(32).toString('hex');
-        // Store credentials (access token field stores combined key:secret)
         const integration = await prisma.integration.create({
             data: {
                 platform: 'WOOCOMMERCE',
@@ -594,9 +539,6 @@ export const woocommerceConnectEndpoint = adminFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// WooCommerce webhook endpoint
-// ------------------------------------------------------
 export const woocommerceWebhookEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'WooCommerce webhook handler',
@@ -613,7 +555,6 @@ export const woocommerceWebhookEndpoint = publicWithRequestFactory.build({
         if (!signature || !source) {
             throw createHttpError(400, 'Missing required WooCommerce headers');
         }
-        // Find integration by source URL
         const integration = await prisma.integration.findFirst({
             where: {
                 platform: 'WOOCOMMERCE',
@@ -623,7 +564,6 @@ export const woocommerceWebhookEndpoint = publicWithRequestFactory.build({
         if (!integration || !integration.webhookSecret) {
             throw createHttpError(404, 'Integration not found');
         }
-        // Verify webhook signature (WooCommerce uses base64-encoded HMAC-SHA256)
         const rawBody = JSON.stringify(ctx.request.body);
         const hmac = crypto
             .createHmac('sha256', integration.webhookSecret)
@@ -632,7 +572,6 @@ export const woocommerceWebhookEndpoint = publicWithRequestFactory.build({
         if (hmac !== signature) {
             throw createHttpError(401, 'Invalid webhook signature');
         }
-        // Process based on topic
         const adapter = platformRegistry.getAdapter('WOOCOMMERCE');
         if (adapter) {
             const payload = adapter.parseWebhookPayload(topic || '', ctx.request.body);
@@ -648,9 +587,6 @@ export const woocommerceWebhookEndpoint = publicWithRequestFactory.build({
         return { received: true };
     },
 });
-// ------------------------------------------------------
-// BigCommerce OAuth endpoints
-// ------------------------------------------------------
 export const bigcommerceInstallEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Start BigCommerce OAuth',
@@ -696,7 +632,6 @@ export const bigcommerceCallbackEndpoint = publicWithRequestFactory.build({
         const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
         const redirectUri = `${baseUrl}/v1/integrations/bigcommerce/callback`;
         try {
-            // Context format: stores/{store_hash}
             const storeHash = input.context.split('/')[1];
             const tokens = await adapter.exchangeCodeForToken(storeHash, input.code, redirectUri);
             const webhookSecret = crypto.randomBytes(32).toString('hex');
@@ -746,9 +681,6 @@ export const bigcommerceCallbackEndpoint = publicWithRequestFactory.build({
         }
     },
 });
-// ------------------------------------------------------
-// Wix OAuth endpoints
-// ------------------------------------------------------
 export const wixInstallEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Start Wix OAuth',
@@ -845,9 +777,6 @@ export const wixCallbackEndpoint = publicWithRequestFactory.build({
         }
     },
 });
-// ------------------------------------------------------
-// Salesforce OAuth endpoints
-// ------------------------------------------------------
 export const salesforceInstallEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Start Salesforce OAuth',
@@ -894,7 +823,6 @@ export const salesforceCallbackEndpoint = publicWithRequestFactory.build({
         try {
             const tokens = await adapter.exchangeCodeForToken('', input.code, redirectUri);
             const webhookSecret = crypto.randomBytes(32).toString('hex');
-            // Extract instance URL from token exchange (stored in metadata for API calls)
             const integration = await prisma.integration.create({
                 data: {
                     platform: 'SALESFORCE',
@@ -929,9 +857,6 @@ export const salesforceCallbackEndpoint = publicWithRequestFactory.build({
         }
     },
 });
-// ------------------------------------------------------
-// Magento connect endpoint (Integration token based)
-// ------------------------------------------------------
 export const magentoConnectEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Connect Magento',
@@ -948,9 +873,7 @@ export const magentoConnectEndpoint = adminFactory.build({
         message: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Normalize base URL
         const baseUrl = input.baseUrl.replace(/\/$/, '');
-        // Verify credentials by making a test API call
         try {
             const response = await fetch(`${baseUrl}/rest/V1/store/storeConfigs`, {
                 headers: {
@@ -995,9 +918,6 @@ export const magentoConnectEndpoint = adminFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// Magento webhook endpoint
-// ------------------------------------------------------
 export const magentoWebhookEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Magento webhook handler',
@@ -1014,7 +934,6 @@ export const magentoWebhookEndpoint = publicWithRequestFactory.build({
         if (!signature || !storeUrl) {
             throw createHttpError(400, 'Missing required Magento headers');
         }
-        // Find integration by store URL
         const integration = await prisma.integration.findFirst({
             where: {
                 platform: 'MAGENTO',
@@ -1024,7 +943,6 @@ export const magentoWebhookEndpoint = publicWithRequestFactory.build({
         if (!integration || !integration.webhookSecret) {
             throw createHttpError(404, 'Integration not found');
         }
-        // Verify webhook signature
         const rawBody = JSON.stringify(ctx.request.body);
         const hmac = crypto
             .createHmac('sha256', integration.webhookSecret)
@@ -1033,7 +951,6 @@ export const magentoWebhookEndpoint = publicWithRequestFactory.build({
         if (hmac !== signature) {
             throw createHttpError(401, 'Invalid webhook signature');
         }
-        // Process based on topic
         const adapter = platformRegistry.getAdapter('MAGENTO');
         if (adapter) {
             const payload = adapter.parseWebhookPayload(topic || '', ctx.request.body);
@@ -1049,9 +966,6 @@ export const magentoWebhookEndpoint = publicWithRequestFactory.build({
         return { received: true };
     },
 });
-// ------------------------------------------------------
-// Square OAuth endpoints
-// ------------------------------------------------------
 export const squareInstallEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Start Square OAuth',
@@ -1111,7 +1025,6 @@ export const squareCallbackEndpoint = publicWithRequestFactory.build({
                     createdBy: 'system',
                 },
             });
-            // Register webhooks
             if (tokens.accessToken) {
                 const webhookCallbackUrl = `${baseUrl}/v1/integrations/square/webhooks`;
                 const webhookIds = await adapter.registerWebhooks('', tokens.accessToken, webhookCallbackUrl);
@@ -1142,9 +1055,6 @@ export const squareCallbackEndpoint = publicWithRequestFactory.build({
         }
     },
 });
-// ------------------------------------------------------
-// Square webhook endpoint
-// ------------------------------------------------------
 export const squareWebhookEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Square webhook handler',
@@ -1160,8 +1070,6 @@ export const squareWebhookEndpoint = publicWithRequestFactory.build({
         if (!signature) {
             throw createHttpError(400, 'Missing Square signature header');
         }
-        // Find integration by checking all Square integrations
-        // In production, you'd store the merchant_id in the integration
         const integrations = await prisma.integration.findMany({
             where: { platform: 'SQUARE' },
         });
@@ -1179,7 +1087,6 @@ export const squareWebhookEndpoint = publicWithRequestFactory.build({
         if (!matchedIntegration) {
             throw createHttpError(401, 'Invalid webhook signature');
         }
-        // Process based on event type
         const adapter = platformRegistry.getAdapter('SQUARE');
         if (adapter && eventType) {
             const payload = adapter.parseWebhookPayload(eventType, ctx.request.body);

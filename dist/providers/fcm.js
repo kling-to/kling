@@ -1,9 +1,4 @@
 import crypto from 'crypto';
-/**
- * Firebase Cloud Messaging (FCM) provider for push notifications.
- * Uses FCM HTTP v1 API for sending push notifications to mobile devices.
- * @see https://firebase.google.com/docs/cloud-messaging/http-server-ref
- */
 export class FcmPushProvider {
     name = 'fcm';
     channel = 'push';
@@ -21,15 +16,11 @@ export class FcmPushProvider {
         }
         this.projectId = projectId;
         this.clientEmail = clientEmail;
-        // Handle escaped newlines in private key
         this.privateKey = privateKey.replace(/\\n/g, '\n');
     }
-    /**
-     * Generate a JWT for FCM authentication
-     */
     generateJWT() {
         const now = Math.floor(Date.now() / 1000);
-        const exp = now + 3600; // 1 hour expiry
+        const exp = now + 3600;
         const header = {
             alg: 'RS256',
             typ: 'JWT',
@@ -50,11 +41,7 @@ export class FcmPushProvider {
         const signature = sign.sign(this.privateKey, 'base64url');
         return `${signatureInput}.${signature}`;
     }
-    /**
-     * Get OAuth2 access token for FCM API
-     */
     async getAccessToken() {
-        // Return cached token if still valid
         if (this.accessToken && Date.now() < this.tokenExpiry) {
             return this.accessToken;
         }
@@ -75,28 +62,24 @@ export class FcmPushProvider {
         }
         const data = (await response.json());
         this.accessToken = data.access_token;
-        // Set expiry 5 minutes before actual expiry to be safe
         this.tokenExpiry = Date.now() + (data.expires_in - 300) * 1000;
         return this.accessToken;
     }
     async send(message) {
         try {
             const accessToken = await this.getAccessToken();
-            // Build FCM message payload
             const fcmMessage = {
                 message: {
-                    token: message.to, // Device token
+                    token: message.to,
                     notification: {
                         title: message.subject || 'Notification',
                         body: message.body,
                     },
                 },
             };
-            // Add image if present
             if (message.metadata?.imageUrl) {
                 fcmMessage.message.notification.image = message.metadata.imageUrl;
             }
-            // Add custom data payload
             if (message.metadata?.data) {
                 const dataPayload = message.metadata.data;
                 fcmMessage.message.data = {};
@@ -104,7 +87,6 @@ export class FcmPushProvider {
                     fcmMessage.message.data[key] = String(value);
                 }
             }
-            // Add deep link
             if (message.metadata?.deepLink) {
                 const deepLink = message.metadata.deepLink;
                 fcmMessage.message.android = {
@@ -119,7 +101,6 @@ export class FcmPushProvider {
                     },
                 };
             }
-            // Send to FCM HTTP v1 API
             const response = await fetch(`https://fcm.googleapis.com/v1/projects/${this.projectId}/messages:send`, {
                 method: 'POST',
                 headers: {
@@ -138,7 +119,6 @@ export class FcmPushProvider {
                     retryable: this.isRetryableError(response.status, errorCode),
                 };
             }
-            // Extract message ID from response (format: projects/{project}/messages/{messageId})
             const messageId = responseData.name?.split('/').pop() || responseData.name;
             return {
                 success: true,
@@ -151,37 +131,25 @@ export class FcmPushProvider {
             return {
                 success: false,
                 error: errorMessage,
-                retryable: true, // Network errors are retryable
+                retryable: true,
             };
         }
     }
     isRetryableError(statusCode, errorCode) {
-        // Server errors are retryable
         if (statusCode >= 500)
             return true;
-        // Rate limiting
         if (statusCode === 429)
             return true;
-        // FCM-specific retryable errors
         const retryableErrorCodes = ['UNAVAILABLE', 'INTERNAL', 'QUOTA_EXCEEDED'];
         if (errorCode && retryableErrorCodes.includes(errorCode))
             return true;
         return false;
     }
-    /**
-     * FCM doesn't use traditional webhook signatures.
-     * Cloud Functions or Cloud Run are typically used for delivery receipts.
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     verifyWebhook(_payload, _signature) {
-        // FCM delivery receipts are typically handled via Firebase Cloud Functions
-        // For direct HTTP delivery receipts, verification would depend on setup
         console.warn('[FcmPushProvider] Webhook verification not implemented for FCM');
         return true;
     }
     parseWebhook(payload) {
-        // FCM delivery receipts format varies based on setup
-        // This handles the common data message format
         const data = payload;
         if (!data)
             return null;
@@ -205,7 +173,6 @@ export class FcmPushProvider {
     }
     async healthCheck() {
         try {
-            // Try to get access token as health check
             await this.getAccessToken();
             return true;
         }

@@ -1,8 +1,3 @@
-/**
- * BullMQ Workers
- *
- * Implements job processors for campaign execution and customer messaging.
- */
 import { Worker } from 'bullmq';
 import { getRedisConnection, QUEUE_NAMES, getWorkerConcurrency } from './connection';
 import { getCustomerQueue, getDLQ, } from './queues';
@@ -19,24 +14,16 @@ import { getNextFallbackChannel, shouldTriggerFallback, DEFAULT_FALLBACK_CONFIG,
 import { buildTemplateData, renderInlineTemplate, } from '../template-renderer';
 import { fetchRecommendationsForMessage, templateNeedsRecommendations, } from '../recommendation-fetcher';
 import { getCustomerOptimalHour, calculateSendDelay, } from '../send-time-calculator';
-// Worker instances
 let campaignWorker = null;
 let customerWorker = null;
-/**
- * Check if a query DSL contains an aggregation query
- */
 function isAggregationQuery(dsl) {
     return (typeof dsl === 'object' &&
         dsl !== null &&
         'aggregation' in dsl &&
         typeof dsl.aggregation === 'object');
 }
-/**
- * Execute query - handles both standard and aggregation queries
- */
 async function executeCampaignQuery(queryString, options) {
     const dsl = parseQueryDSL(queryString);
-    // Check if this is an aggregation query
     if (isAggregationQuery(dsl)) {
         console.log(`[CampaignWorker] Executing aggregation query: ${dsl.aggregation.type}`);
         const result = await executeAggregationQuery(dsl, {
@@ -44,7 +31,6 @@ async function executeCampaignQuery(queryString, options) {
             pageSize: options.pageSize,
             excludeOptedOut: options.excludeOptedOut,
         });
-        // Convert AggregationResult to QueryResult format
         return {
             customers: result.customers.map((c) => ({
                 id: c.id,
@@ -62,12 +48,8 @@ async function executeCampaignQuery(queryString, options) {
             hasMore: result.hasMore,
         };
     }
-    // Standard query execution
     return executeQuery(dsl, options);
 }
-/**
- * Fetch application settings from database
- */
 async function fetchAppSettings() {
     const settings = await prisma.settings.findFirst({
         select: {
@@ -98,9 +80,6 @@ async function fetchAppSettings() {
         monthlyMessageLimit: settings.monthlyMessageLimit,
     };
 }
-/**
- * Move a failed job to the dead-letter queue
- */
 async function moveToDeadLetter(originalQueue, job, error) {
     const dlq = getDLQ();
     const dlqData = {
@@ -114,44 +93,32 @@ async function moveToDeadLetter(originalQueue, job, error) {
     await dlq.add(`dlq_${job.id}`, dlqData);
     console.log(`[DLQ] Job ${job.id} moved to dead-letter queue: ${error.message}`);
 }
-/**
- * Deterministically assign a customer to a cohort using SHA256 hash
- * Same experimentId + customerId always produces the same cohort
- */
 function assignCohort(experimentId, customerId, controlPercent) {
     const hash = crypto.createHash('sha256').update(`${experimentId}:${customerId}`).digest('hex');
     const hashValue = parseInt(hash.substring(0, 8), 16);
     const percentage = (hashValue / 0xffffffff) * 100;
     return percentage < controlPercent ? 'control' : 'treatment';
 }
-/**
- * Process a campaign job - executes query and enqueues customer jobs
- */
 async function processCampaignJob(job) {
     const { campaignId, isTest = false } = job.data;
     const correlationId = `cmp_${campaignId}_${job.id}`;
     console.log(`[CampaignWorker] Starting job ${job.id} for campaign ${campaignId}`);
-    // 1. Load campaign definition
     const campaign = await prisma.campaignDefinition.findUnique({
         where: { id: campaignId },
     });
-    // Fetch application settings from database
     const appSettings = campaign ? await fetchAppSettings() : null;
     if (!campaign) {
         console.error(`[CampaignWorker] Campaign ${campaignId} not found`);
         throw new Error(`Campaign ${campaignId} not found`);
     }
-    // Check if campaign is active (it might have been paused/archived since scheduling)
     if (campaign.status !== 'active') {
         console.log(`[CampaignWorker] Campaign ${campaignId} is ${campaign.status}, skipping execution`);
         return;
     }
-    // Check if "once" campaign has already been executed
     if (campaign.executionType === 'once' && campaign.executedOnce) {
         console.log(`[CampaignWorker] Campaign ${campaignId} is a "once" campaign that has already executed, skipping`);
         return;
     }
-    // Check for running experiment on this campaign (A/B Testing)
     const experiment = await prisma.experiment.findFirst({
         where: {
             campaignId: campaign.id,
@@ -161,11 +128,10 @@ async function processCampaignJob(job) {
     if (experiment) {
         console.log(`[CampaignWorker] Campaign ${campaignId} has running experiment ${experiment.id} (${experiment.name})`);
     }
-    // 2. Create execution record
     const execution = await prisma.campaignExecution.create({
         data: {
             campaignId: campaign.id,
-            correlationId, // Using correlationId as run ID
+            correlationId,
             bullMqJobId: `bullmq_${job.id}`,
             isTest,
             status: 'running',
@@ -174,7 +140,6 @@ async function processCampaignJob(job) {
     let customersMatched = 0;
     let messagesEnqueued = 0;
     try {
-        // 3. Execute query with pagination (supports both standard and aggregation queries)
         let page = 1;
         const pageSize = 100;
         let hasMore = true;
@@ -185,35 +150,29 @@ async function processCampaignJob(job) {
                 pageSize,
             });
             customersMatched = result.total;
-            // 4. Enqueue per-customer jobs using bulk add for efficiency
             const customerQueue = getCustomerQueue();
-            // Build promo info once (same for all customers in campaign)
-            // Now using embedded discount/gift from campaign
             let promo;
             if (campaign.discount && campaign.discount.code) {
                 promo = {
                     type: 'discount',
-                    promoId: campaign.id, // Use campaign ID for tracking
+                    promoId: campaign.id,
                     code: campaign.discount.code,
                     formattedValue: formatDiscountValue(campaign.discount.type, campaign.discount.value),
                 };
             }
-            // Can have both discount AND gift
             let giftPromo;
             if (campaign.gift && campaign.gift.code) {
                 giftPromo = {
                     type: 'gift',
-                    promoId: campaign.id, // Use campaign ID for tracking
+                    promoId: campaign.id,
                     code: campaign.gift.code,
                     formattedValue: formatGiftValue(campaign.gift.type, campaign.gift.sku, campaign.gift.value ? parseFloat(campaign.gift.value) || null : null),
                 };
             }
-            // If no discount promo but have gift, use gift as primary promo
             if (!promo && giftPromo) {
                 promo = giftPromo;
                 giftPromo = undefined;
             }
-            // Build fallback config once (same for all customers)
             const fallbackConfig = appSettings?.fallbackEnabled
                 ? {
                     enabled: true,
@@ -227,7 +186,6 @@ async function processCampaignJob(job) {
                     },
                 }
                 : undefined;
-            // Build template content from campaign's inline email/sms fields
             let templateContent;
             const campaignEmail = campaign.email;
             const campaignSms = campaign.sms;
@@ -244,9 +202,7 @@ async function processCampaignJob(job) {
                     sms: campaignSms ? { body: campaignSms.body } : undefined,
                 };
             }
-            // Collect jobs for bulk add
             const jobBatch = [];
-            // Check existing jobs in parallel for idempotency
             const idempotencyKeys = result.customers.map((customer) => `${campaignId}_${customer.id}_${execution.id}`);
             const existingJobChecks = await Promise.all(idempotencyKeys.map((key) => customerQueue.getJob(key)));
             const existingJobSet = new Set(existingJobChecks
@@ -255,16 +211,13 @@ async function processCampaignJob(job) {
             for (let i = 0; i < result.customers.length; i++) {
                 const customer = result.customers[i];
                 const idempotencyKey = idempotencyKeys[i];
-                // Skip if already processed (idempotency)
                 if (existingJobSet.has(idempotencyKey)) {
                     console.log(`[CampaignWorker] Skipping duplicate job for customer ${customer.id}`);
                     continue;
                 }
-                // Build experiment data if running an A/B test
                 let experimentData;
                 if (experiment) {
                     const cohort = assignCohort(experiment.id, customer.id, experiment.controlPercent);
-                    // Create experiment assignment in database
                     await prisma.experimentAssignment.upsert({
                         where: {
                             experimentId_customerId: {
@@ -277,12 +230,11 @@ async function processCampaignJob(job) {
                             customerId: customer.id,
                             cohort,
                         },
-                        update: {}, // Don't update if already exists (preserve original assignment)
+                        update: {},
                     });
                     experimentData = {
                         id: experiment.id,
                         cohort,
-                        // Only include treatment overrides for treatment cohort
                         ...(cohort === 'treatment' && {
                             treatmentSubject: experiment.treatmentSubject || undefined,
                             treatmentBody: experiment.treatmentBody || undefined,
@@ -290,7 +242,6 @@ async function processCampaignJob(job) {
                         }),
                     };
                 }
-                // Build recommendations config from campaign email settings (if present)
                 const recommendationsConfig = campaign.email?.includeRecommendations
                     ? {
                         enabled: true,
@@ -303,7 +254,6 @@ async function processCampaignJob(job) {
                     campaignId: campaign.id,
                     customerId: customer.id,
                     channel: campaign.channel,
-                    // Inline template content
                     templateContent,
                     executionId: execution.id,
                     isTest,
@@ -314,15 +264,11 @@ async function processCampaignJob(job) {
                     },
                     promo,
                     fallback: fallbackConfig,
-                    // A/B Testing
                     experiment: experimentData,
-                    // Product recommendations
                     recommendations: recommendationsConfig,
                 };
-                // Calculate delay for send time optimization
                 let delay;
                 if (campaign.enableSendTimeOptimization && !isTest) {
-                    // Build quiet hours settings to avoid scheduling during quiet hours
                     const quietHoursSettings = appSettings?.quietHoursEnabled &&
                         appSettings?.quietHoursStart &&
                         appSettings?.quietHoursEnd
@@ -342,7 +288,6 @@ async function processCampaignJob(job) {
                         }
                     }
                     else if (campaign.defaultSendHour !== null) {
-                        // Use default send hour if no profile exists - fetch customer timezone
                         const customerRecord = await prisma.customer.findUnique({
                             where: { id: customer.id },
                             select: { timezone: true },
@@ -359,12 +304,10 @@ async function processCampaignJob(job) {
                         ...(delay && delay > 0 && { delay }),
                     },
                 });
-                // For test runs, only process one customer
                 if (isTest && jobBatch.length >= 1) {
                     break;
                 }
             }
-            // Bulk add jobs (much more efficient than individual adds)
             if (jobBatch.length > 0) {
                 await customerQueue.addBulk(jobBatch);
                 messagesEnqueued += jobBatch.length;
@@ -372,15 +315,13 @@ async function processCampaignJob(job) {
             hasMore = result.hasMore && !isTest;
             page++;
         }
-        // Update execution with customers matched
         await prisma.campaignExecution.update({
             where: { id: execution.id },
             data: {
                 customersMatched,
-                status: 'running', // Will be updated when all customer jobs complete
+                status: 'running',
             },
         });
-        // Mark "once" campaigns as executed
         if (campaign.executionType === 'once') {
             await prisma.campaignDefinition.update({
                 where: { id: campaignId },
@@ -391,7 +332,6 @@ async function processCampaignJob(job) {
         console.log(`[CampaignWorker] Job ${job.id} completed: ${customersMatched} customers matched, ${messagesEnqueued} jobs enqueued`);
     }
     catch (err) {
-        // Update execution with error
         await prisma.campaignExecution.update({
             where: { id: execution.id },
             data: {
@@ -403,14 +343,10 @@ async function processCampaignJob(job) {
         throw err;
     }
 }
-/**
- * Process a customer job - check eligibility and send message
- */
 async function processCustomerJob(job) {
     const { campaignId, customerId, channel, templateContent, executionId, isTest } = job.data;
     const correlationId = `cust_${customerId}_${job.id}`;
     console.log(`[CustomerWorker] Processing job ${job.id} for customer ${customerId}`);
-    // 1. Load customer
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
         select: {
@@ -427,7 +363,6 @@ async function processCustomerJob(job) {
         console.error(`[CustomerWorker] Customer ${customerId} not found`);
         throw new Error(`Customer ${customerId} not found`);
     }
-    // 2. Check eligibility
     const eligibilityCustomer = {
         id: customer.id,
         email: customer.email,
@@ -442,7 +377,6 @@ async function processCustomerJob(job) {
     });
     if (!eligibility.eligible) {
         console.log(`[CustomerWorker] Customer ${customerId} not eligible: ${eligibility.reasons.join(', ')}`);
-        // Update execution stats
         await prisma.campaignExecution.update({
             where: { id: executionId },
             data: {
@@ -451,12 +385,10 @@ async function processCustomerJob(job) {
         });
         return;
     }
-    // 3. Check quota limits (skip for test runs)
     if (!isTest) {
         const quotaCheck = await canSendMessage();
         if (!quotaCheck.allowed) {
             console.log(`[CustomerWorker] Quota exceeded: ${quotaCheck.reason}`);
-            // Create message log with failure status
             await prisma.messageLog.create({
                 data: {
                     campaignId,
@@ -470,7 +402,6 @@ async function processCustomerJob(job) {
                     isTest,
                 },
             });
-            // Update execution stats
             await prisma.campaignExecution.update({
                 where: { id: executionId },
                 data: {
@@ -480,7 +411,6 @@ async function processCustomerJob(job) {
             return;
         }
     }
-    // 4. Determine recipient address
     let to;
     if (channel === 'email' && customer.email) {
         to = customer.email;
@@ -498,9 +428,7 @@ async function processCustomerJob(job) {
         });
         return;
     }
-    // 5. Render message content with promo placeholders
     const { promo, experiment, recommendations: recConfig } = job.data;
-    // Fetch product recommendations if enabled or template needs them
     let recommendationsData;
     if (channel === 'email' && templateContent?.email) {
         const templateStr = `${templateContent.email.subject} ${templateContent.email.body} ${templateContent.email.html || ''}`;
@@ -521,13 +449,10 @@ async function processCustomerJob(job) {
             }
         }
     }
-    const templateData = buildTemplateData(customer, promo, undefined, // product data (for browse abandonment)
-    recommendationsData);
-    // Log experiment cohort for debugging
+    const templateData = buildTemplateData(customer, promo, undefined, recommendationsData);
     if (experiment) {
         console.log(`[CustomerWorker] Customer ${customerId} in experiment ${experiment.id}, cohort: ${experiment.cohort}`);
     }
-    // Determine content based on template content
     let bodyContent;
     let subjectContent;
     let htmlContent;
@@ -536,7 +461,6 @@ async function processCustomerJob(job) {
     }
     const channelKey = channel;
     if (channelKey === 'email' && templateContent.email) {
-        // Apply treatment overrides if in treatment cohort
         const subject = experiment?.cohort === 'treatment' && experiment.treatmentSubject
             ? experiment.treatmentSubject
             : templateContent.email.subject;
@@ -553,7 +477,6 @@ async function processCustomerJob(job) {
         }
     }
     else if (channelKey === 'sms' && templateContent.sms) {
-        // Apply treatment body override for SMS if in treatment cohort
         const body = experiment?.cohort === 'treatment' && experiment.treatmentBody
             ? experiment.treatmentBody
             : templateContent.sms.body;
@@ -562,7 +485,6 @@ async function processCustomerJob(job) {
     else {
         throw new Error(`No template content for channel: ${channel}`);
     }
-    // 6. Create message log entry (pending)
     const messageLog = await prisma.messageLog.create({
         data: {
             campaignId,
@@ -575,13 +497,11 @@ async function processCustomerJob(job) {
             correlationId,
             executionId,
             isTest,
-            // A/B Testing tracking
             experimentId: experiment?.id || null,
             cohort: experiment?.cohort || null,
         },
     });
     try {
-        // 7. Get provider and send
         const provider = getProviderForChannel(channel);
         const outgoingMessage = {
             to,
@@ -591,7 +511,6 @@ async function processCustomerJob(job) {
         };
         const result = await provider.send(outgoingMessage);
         if (result.success) {
-            // Update message log with success
             await prisma.messageLog.update({
                 where: { id: messageLog.id },
                 data: {
@@ -604,43 +523,37 @@ async function processCustomerJob(job) {
                         : undefined,
                 },
             });
-            // Update customer last contact time
             await prisma.customer.update({
                 where: { id: customerId },
                 data: { lastContactAt: new Date() },
             });
-            // Update execution stats
             await prisma.campaignExecution.update({
                 where: { id: executionId },
                 data: {
                     messagesSent: { increment: 1 },
                 },
             });
-            // Track promo grant if applicable (skip for test runs)
-            // Now references campaignId instead of discountId/giftId
             if (promo && !isTest) {
                 try {
                     if (promo.type === 'discount') {
-                        // Create a discount redemption record showing the code was sent
                         await prisma.discountRedemption.create({
                             data: {
-                                campaignId: promo.promoId, // Now using campaignId
+                                campaignId: promo.promoId,
                                 customerId,
-                                discountType: 'percentage', // Will be updated when actually redeemed
-                                discountValue: 0, // Will be filled when actually redeemed at checkout
+                                discountType: 'percentage',
+                                discountValue: 0,
                                 code: promo.code,
-                                status: 'pending', // Pending until redeemed
+                                status: 'pending',
                             },
                         });
                         console.log(`[CustomerWorker] Tracked discount code ${promo.code} sent to ${customerId}`);
                     }
                     else if (promo.type === 'gift') {
-                        // Create a gift grant record
                         await prisma.giftGrant.create({
                             data: {
-                                campaignId: promo.promoId, // Now using campaignId
+                                campaignId: promo.promoId,
                                 customerId,
-                                giftType: 'redemption_code', // Will be updated based on campaign gift type
+                                giftType: 'redemption_code',
                                 code: promo.code,
                                 status: 'granted',
                             },
@@ -649,11 +562,9 @@ async function processCustomerJob(job) {
                     }
                 }
                 catch (promoErr) {
-                    // Log but don't fail the message send
                     console.error(`[CustomerWorker] Failed to track promo grant:`, promoErr);
                 }
             }
-            // Audit log
             await createAuditLog({
                 action: AuditActions.message.sent,
                 resourceType: 'message',
@@ -670,7 +581,6 @@ async function processCustomerJob(job) {
             console.log(`[CustomerWorker] Message sent to customer ${customerId}, messageLog: ${messageLog.id}`);
         }
         else {
-            // Update message log with failure
             await prisma.messageLog.update({
                 where: { id: messageLog.id },
                 data: {
@@ -681,18 +591,15 @@ async function processCustomerJob(job) {
                 },
             });
             if (!result.retryable) {
-                // Check if we should attempt channel fallback
                 const fallbackData = job.data.fallback;
                 const fallbackConfig = fallbackData?.config || DEFAULT_FALLBACK_CONFIG;
                 const attemptedChannels = fallbackData?.attemptedChannels || [channel];
                 const primaryChannel = fallbackData?.primaryChannel || channel;
-                // Determine if fallback should be triggered
                 const triggerFallback = fallbackConfig.enabled &&
                     shouldTriggerFallback(result.error || 'unknown', false, fallbackConfig);
                 if (triggerFallback) {
                     const nextChannel = getNextFallbackChannel(attemptedChannels, primaryChannel, fallbackConfig);
                     if (nextChannel) {
-                        // Enqueue fallback job
                         console.log(`[CustomerWorker] Triggering fallback from ${channel} to ${nextChannel} for customer ${customerId}`);
                         const customerQueue = getCustomerQueue();
                         const fallbackJobData = {
@@ -707,18 +614,15 @@ async function processCustomerJob(job) {
                             },
                         };
                         await customerQueue.add(`fallback_${customerId}_${nextChannel}_${Date.now()}`, fallbackJobData);
-                        // Update original message log to note fallback
                         await prisma.messageLog.update({
                             where: { id: messageLog.id },
                             data: {
                                 errorMessage: `${result.error} - Falling back to ${nextChannel}`,
                             },
                         });
-                        // Don't count as failed since we're retrying on another channel
                         return;
                     }
                 }
-                // No fallback available or not triggered - count as permanent failure
                 await prisma.campaignExecution.update({
                     where: { id: executionId },
                     data: {
@@ -726,7 +630,6 @@ async function processCustomerJob(job) {
                     },
                 });
             }
-            // Audit log
             await createAuditLog({
                 action: AuditActions.message.failed,
                 resourceType: 'message',
@@ -750,7 +653,6 @@ async function processCustomerJob(job) {
     }
     catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        // Update message log with error
         await prisma.messageLog.update({
             where: { id: messageLog.id },
             data: {
@@ -759,12 +661,9 @@ async function processCustomerJob(job) {
                 retryCount: job.attemptsMade,
             },
         });
-        throw err; // Re-throw for BullMQ retry handling
+        throw err;
     }
 }
-/**
- * Start the campaign worker
- */
 export function startCampaignWorker() {
     if (campaignWorker) {
         return campaignWorker;
@@ -775,24 +674,18 @@ export function startCampaignWorker() {
         connection: getRedisConnection(),
         concurrency: getWorkerConcurrency(),
     });
-    // Handle job completion
     campaignWorker.on('completed', (job) => {
         console.log(`[CampaignWorker] Job ${job.id} completed successfully`);
     });
-    // Handle job failure
     campaignWorker.on('failed', async (job, err) => {
         console.error(`[CampaignWorker] Job ${job?.id} failed:`, err.message);
         if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
-            // Max retries reached, move to DLQ
             await moveToDeadLetter(QUEUE_NAMES.CAMPAIGN, job, err);
         }
     });
     console.log('[CampaignWorker] Started');
     return campaignWorker;
 }
-/**
- * Start the customer worker
- */
 export function startCustomerWorker() {
     if (customerWorker) {
         return customerWorker;
@@ -801,19 +694,15 @@ export function startCustomerWorker() {
         await processCustomerJob(job);
     }, {
         connection: getRedisConnection(),
-        concurrency: getWorkerConcurrency() * 2, // Higher concurrency for customer jobs
+        concurrency: getWorkerConcurrency() * 2,
     });
-    // Handle job completion
     customerWorker.on('completed', (job) => {
         console.log(`[CustomerWorker] Job ${job.id} completed successfully`);
     });
-    // Handle job failure
     customerWorker.on('failed', async (job, err) => {
         console.error(`[CustomerWorker] Job ${job?.id} failed:`, err.message);
         if (job && job.attemptsMade >= (job.opts.attempts || 5)) {
-            // Max retries reached, move to DLQ
             await moveToDeadLetter(QUEUE_NAMES.CUSTOMER, job, err);
-            // Update execution stats
             if (job.data.executionId) {
                 await prisma.campaignExecution.update({
                     where: { id: job.data.executionId },
@@ -827,18 +716,12 @@ export function startCustomerWorker() {
     console.log('[CustomerWorker] Started');
     return customerWorker;
 }
-/**
- * Start all workers
- */
 export function startAllWorkers() {
     return {
         campaignWorker: startCampaignWorker(),
         customerWorker: startCustomerWorker(),
     };
 }
-/**
- * Stop all workers gracefully
- */
 export async function stopAllWorkers() {
     const closePromises = [];
     if (campaignWorker) {
@@ -852,9 +735,6 @@ export async function stopAllWorkers() {
     await Promise.all(closePromises);
     console.log('[Workers] All workers stopped');
 }
-/**
- * Check if workers are running
- */
 export function areWorkersRunning() {
     return {
         campaign: campaignWorker !== null && campaignWorker.isRunning(),

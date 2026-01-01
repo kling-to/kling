@@ -1,9 +1,4 @@
-/**
- * Shopify Platform Adapter
- * Handles OAuth, webhooks, and data sync for Shopify stores
- */
 import crypto from 'crypto';
-// Webhook topics we subscribe to
 const SHOPIFY_WEBHOOK_TOPICS = [
     'customers/create',
     'customers/update',
@@ -22,9 +17,6 @@ export class ShopifyAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * Generate OAuth authorization URL
-     */
     getAuthUrl(shopDomain, redirectUri, state) {
         const scopes = this.config.scopes.join(',');
         const shop = this.normalizeShopDomain(shopDomain);
@@ -34,9 +26,6 @@ export class ShopifyAdapter {
             `&redirect_uri=${encodeURIComponent(redirectUri)}` +
             `&state=${state}`);
     }
-    /**
-     * Exchange authorization code for access token
-     */
     async exchangeCodeForToken(shopDomain, code, _redirectUri) {
         const shop = this.normalizeShopDomain(shopDomain);
         const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
@@ -58,9 +47,6 @@ export class ShopifyAdapter {
             scopes: data.scope.split(','),
         };
     }
-    /**
-     * Register webhooks with Shopify
-     */
     async registerWebhooks(shopDomain, accessToken, callbackUrl) {
         const shop = this.normalizeShopDomain(shopDomain);
         const webhookIds = [];
@@ -94,9 +80,6 @@ export class ShopifyAdapter {
         }
         return webhookIds;
     }
-    /**
-     * Unregister webhooks from Shopify
-     */
     async unregisterWebhooks(shopDomain, accessToken, webhookIds) {
         const shop = this.normalizeShopDomain(shopDomain);
         for (const webhookId of webhookIds) {
@@ -111,22 +94,16 @@ export class ShopifyAdapter {
             }
         }
     }
-    /**
-     * Verify webhook signature using HMAC-SHA256
-     */
     verifyWebhook(rawBody, signature, secret) {
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers from Shopify with pagination
-     */
     async fetchCustomers(shopDomain, accessToken, cursor) {
         const shop = this.normalizeShopDomain(shopDomain);
         const limit = 250;
         let url = `https://${shop}/admin/api/${this.config.apiVersion}/customers.json?limit=${limit}`;
         if (cursor) {
-            url = cursor; // Shopify uses full URL for pagination
+            url = cursor;
         }
         const response = await fetch(url, {
             headers: { 'X-Shopify-Access-Token': accessToken },
@@ -135,7 +112,6 @@ export class ShopifyAdapter {
             throw new Error(`Failed to fetch customers: ${await response.text()}`);
         }
         const data = (await response.json());
-        // Parse Link header for pagination
         const linkHeader = response.headers.get('Link');
         const nextLink = this.parseNextLink(linkHeader);
         return {
@@ -144,9 +120,6 @@ export class ShopifyAdapter {
             cursor: nextLink,
         };
     }
-    /**
-     * Fetch orders from Shopify with pagination
-     */
     async fetchOrders(shopDomain, accessToken, cursor, sinceDate) {
         const shop = this.normalizeShopDomain(shopDomain);
         const limit = 250;
@@ -164,7 +137,6 @@ export class ShopifyAdapter {
             throw new Error(`Failed to fetch orders: ${await response.text()}`);
         }
         const data = (await response.json());
-        // Parse Link header for pagination
         const linkHeader = response.headers.get('Link');
         const nextLink = this.parseNextLink(linkHeader);
         return {
@@ -173,9 +145,6 @@ export class ShopifyAdapter {
             cursor: nextLink,
         };
     }
-    /**
-     * Parse webhook payload based on topic
-     */
     parseWebhookPayload(topic, payload) {
         switch (topic) {
             case 'customers/create':
@@ -189,25 +158,18 @@ export class ShopifyAdapter {
             case 'carts/update':
                 return this.mapCart(payload);
             case 'refunds/create':
-                // Refunds contain order info
                 const refundPayload = payload;
-                // Return null - we'll need to fetch the full order to process refund
                 console.log('Refund received for order:', refundPayload.order_id);
                 return null;
             case 'customers/delete':
             case 'app/uninstalled':
-                // Handle these specially in webhook endpoint
                 return null;
             default:
                 console.warn(`Unknown Shopify webhook topic: ${topic}`);
                 return null;
         }
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     normalizeShopDomain(shop) {
-        // Ensure domain ends with .myshopify.com
         if (!shop.includes('.')) {
             return `${shop}.myshopify.com`;
         }
@@ -249,7 +211,6 @@ export class ShopifyAdapter {
         if (!customerId) {
             throw new Error(`Order ${o.id} has no customer`);
         }
-        // Determine order status
         let status = 'completed';
         if (o.cancelled_at) {
             status = 'cancelled';
@@ -263,7 +224,6 @@ export class ShopifyAdapter {
         else if (o.financial_status === 'pending' || o.financial_status === 'authorized') {
             status = 'pending';
         }
-        // Get first discount code if any
         const couponCode = o.discount_codes?.[0]?.code || null;
         return {
             externalId: `shopify:${o.id}`,
@@ -275,7 +235,7 @@ export class ShopifyAdapter {
             items: o.line_items.map((item) => ({
                 sku: item.sku || `shopify-${item.variant_id}`,
                 name: item.title || item.name,
-                category: null, // Shopify doesn't have categories on line items
+                category: null,
                 brand: item.vendor || null,
                 price: parseFloat(item.price),
                 quantity: item.quantity,
@@ -304,9 +264,6 @@ export class ShopifyAdapter {
         };
     }
 }
-/**
- * Create and configure Shopify adapter
- */
 export function createShopifyAdapter(config) {
     return new ShopifyAdapter({
         platform: 'SHOPIFY',

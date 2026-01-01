@@ -1,17 +1,7 @@
-/**
- * GDPR Data Pipeline Utilities
- *
- * Provides comprehensive data export and deletion capabilities
- * for GDPR "right to access" and "right to be forgotten" compliance.
- */
 import prisma from './prisma';
 import { createAuditLog, AuditActions } from './audit';
-/**
- * Export all customer data (GDPR Article 15 - Right of Access)
- */
 export async function exportCustomerData(customerId, options = {}) {
     const { includeOrders = true, includeEvents = true, includeMessages = true, includeConsentHistory = true, includeExperiments = true, includePromotions = true, } = options;
-    // Get customer profile
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
     });
@@ -35,7 +25,6 @@ export async function exportCustomerData(customerId, options = {}) {
             metadata: customer.metadata,
         },
     };
-    // Get orders
     if (includeOrders) {
         const orders = await prisma.order.findMany({
             where: { customerId },
@@ -44,10 +33,10 @@ export async function exportCustomerData(customerId, options = {}) {
         });
         result.orders = orders.map((order) => ({
             id: order.id,
-            orderNumber: order.id, // Use ID as order number since schema doesn't have orderNumber
+            orderNumber: order.id,
             status: order.status,
             totalAmount: order.total,
-            currency: 'USD', // Default since schema doesn't have currency
+            currency: 'USD',
             createdAt: order.purchasedAt.toISOString(),
             items: order.items.map((item) => ({
                 productName: item.name,
@@ -56,12 +45,11 @@ export async function exportCustomerData(customerId, options = {}) {
             })),
         }));
     }
-    // Get events
     if (includeEvents) {
         const events = await prisma.customerEvent.findMany({
             where: { customerId },
             orderBy: { occurredAt: 'desc' },
-            take: 1000, // Limit to last 1000 events
+            take: 1000,
         });
         result.events = events.map((event) => ({
             id: event.id,
@@ -70,7 +58,6 @@ export async function exportCustomerData(customerId, options = {}) {
             metadata: event.eventData,
         }));
     }
-    // Get message logs
     if (includeMessages) {
         const messages = await prisma.messageLog.findMany({
             where: { customerId },
@@ -80,7 +67,7 @@ export async function exportCustomerData(customerId, options = {}) {
                 },
             },
             orderBy: { createdAt: 'desc' },
-            take: 500, // Limit to last 500 messages
+            take: 500,
         });
         result.messages = messages.map((msg) => ({
             id: msg.id,
@@ -91,7 +78,6 @@ export async function exportCustomerData(customerId, options = {}) {
             campaignName: msg.campaign?.name || undefined,
         }));
     }
-    // Get consent history
     if (includeConsentHistory) {
         const consents = await prisma.consentLog.findMany({
             where: { customerId },
@@ -105,7 +91,6 @@ export async function exportCustomerData(customerId, options = {}) {
             createdAt: consent.createdAt.toISOString(),
         }));
     }
-    // Get experiment assignments
     if (includeExperiments) {
         const assignments = await prisma.experimentAssignment.findMany({
             where: { customerId },
@@ -123,7 +108,6 @@ export async function exportCustomerData(customerId, options = {}) {
             convertedAt: assign.convertedAt?.toISOString() || null,
         }));
     }
-    // Get promotion usage (now linked via campaignId)
     if (includePromotions) {
         const discountRedemptions = await prisma.discountRedemption.findMany({
             where: { customerId },
@@ -148,12 +132,8 @@ export async function exportCustomerData(customerId, options = {}) {
     }
     return result;
 }
-/**
- * Delete or anonymize customer data (GDPR Article 17 - Right to Erasure)
- */
 export async function deleteCustomerData(customerId, requestedBy, options) {
     const { mode, retainOrders = true, retainMessageLogs = true } = options;
-    // Verify customer exists
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
         select: { id: true, email: true },
@@ -162,7 +142,6 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
         throw new Error('Customer not found');
     }
     const deletionId = `deletion-${Date.now()}-${customerId}`;
-    // Count records before deletion
     const [ordersCount, eventsCount, messagesCount, consentsCount, experimentsCount, discountRedemptionsCount, giftGrantsCount,] = await Promise.all([
         prisma.order.count({ where: { customerId } }),
         prisma.customerEvent.count({ where: { customerId } }),
@@ -174,29 +153,20 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
     ]);
     await prisma.$transaction(async (tx) => {
         if (mode === 'delete') {
-            // Full deletion mode
-            // Delete experiment assignments
             await tx.experimentAssignment.deleteMany({ where: { customerId } });
-            // Delete discount redemptions
             await tx.discountRedemption.deleteMany({ where: { customerId } });
-            // Delete gift grants
             await tx.giftGrant.deleteMany({ where: { customerId } });
-            // Delete events
             await tx.customerEvent.deleteMany({ where: { customerId } });
-            // Delete consent logs
             await tx.consentLog.deleteMany({ where: { customerId } });
-            // Handle orders
             if (retainOrders) {
-                // Anonymize orders but keep for financial records
                 await tx.order.updateMany({
                     where: { customerId },
                     data: {
-                        customerId: null, // Unlink from customer
+                        customerId: null,
                     },
                 });
             }
             else {
-                // Delete order items first
                 const orderIds = await tx.order.findMany({
                     where: { customerId },
                     select: { id: true },
@@ -206,9 +176,7 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
                 });
                 await tx.order.deleteMany({ where: { customerId } });
             }
-            // Handle message logs
             if (retainMessageLogs) {
-                // Anonymize message logs
                 await tx.messageLog.updateMany({
                     where: { customerId },
                     data: {
@@ -221,12 +189,9 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
             else {
                 await tx.messageLog.deleteMany({ where: { customerId } });
             }
-            // Delete customer
             await tx.customer.delete({ where: { id: customerId } });
         }
         else {
-            // Anonymization mode - preserves record structure
-            // Anonymize customer profile
             await tx.customer.update({
                 where: { id: customerId },
                 data: {
@@ -239,9 +204,7 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
                     optOutChannels: ['email', 'sms'],
                 },
             });
-            // Delete events (no need to anonymize)
             await tx.customerEvent.deleteMany({ where: { customerId } });
-            // Anonymize message logs
             await tx.messageLog.updateMany({
                 where: { customerId },
                 data: {
@@ -250,13 +213,8 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
                     subject: '[REDACTED]',
                 },
             });
-            // Consent logs kept for legal compliance but customer is marked deleted
-            // Experiment assignments kept (anonymized customer)
-            // Discount usages kept (anonymized customer)
-            // Gift grants kept (anonymized customer)
         }
     });
-    // Create audit log
     await createAuditLog({
         action: AuditActions.data.deletionRequested,
         resourceType: 'customer',
@@ -293,17 +251,10 @@ export async function deleteCustomerData(customerId, requestedBy, options) {
         },
     };
 }
-/**
- * Generate a downloadable data export file content (JSON format)
- */
 export function formatExportAsJSON(exportData) {
     return JSON.stringify(exportData, null, 2);
 }
-/**
- * Check if a customer has pending data requests
- */
 export async function hasPendingDataRequests(customerId) {
-    // Check audit logs for recent export/deletion requests
     const recentRequests = await prisma.auditLog.findFirst({
         where: {
             resourceId: customerId,
@@ -312,16 +263,12 @@ export async function hasPendingDataRequests(customerId) {
                 in: ['data_export_requested', 'data_deletion_requested'],
             },
             createdAt: {
-                gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+                gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
             },
         },
     });
     return recentRequests !== null;
 }
-/**
- * Verify customer identity for GDPR requests (basic implementation)
- * In production, this should involve email verification or other identity checks
- */
 export async function verifyCustomerIdentity(customerId, verificationData) {
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
@@ -330,7 +277,6 @@ export async function verifyCustomerIdentity(customerId, verificationData) {
     if (!customer) {
         return false;
     }
-    // Verify at least one matching identifier
     if (verificationData.email && customer.email === verificationData.email) {
         return true;
     }

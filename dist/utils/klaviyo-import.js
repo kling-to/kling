@@ -1,11 +1,4 @@
-/**
- * Klaviyo Import Utilities
- *
- * Parse and transform Klaviyo export data to Kling format.
- * Supports CSV and JSON formats from Klaviyo exports.
- */
 import Papa from 'papaparse';
-// Klaviyo event type to Kling event type mapping
 export const EVENT_TYPE_MAP = {
     'Placed Order': 'order_placed',
     'Ordered Product': 'order_placed',
@@ -25,7 +18,6 @@ export const EVENT_TYPE_MAP = {
     'Received SMS': 'sms_received',
     'Clicked SMS': 'sms_clicked',
 };
-// Klaviyo segment operator to Kling operator mapping
 export const OPERATOR_MAP = {
     equals: 'eq',
     'does not equal': 'neq',
@@ -42,9 +34,6 @@ export const OPERATOR_MAP = {
     'is in': 'in',
     'is not in': 'notIn',
 };
-/**
- * Parse Klaviyo CSV export to Kling customer format
- */
 export function parseKlaviyoProfileCSV(csvContent) {
     const result = {
         total: 0,
@@ -71,9 +60,8 @@ export function parseKlaviyoProfileCSV(csvContent) {
     result.total = parsed.data.length;
     for (let i = 0; i < parsed.data.length; i++) {
         const row = parsed.data[i];
-        const rowNum = i + 2; // Account for header row
+        const rowNum = i + 2;
         try {
-            // Must have email or phone
             const email = row.Email?.trim().toLowerCase();
             const phone = row['Phone Number']?.trim();
             if (!email && !phone) {
@@ -81,7 +69,6 @@ export function parseKlaviyoProfileCSV(csvContent) {
                 result.warnings.push(`Row ${rowNum}: Skipped - no email or phone`);
                 continue;
             }
-            // Validate email format
             if (email && !isValidEmail(email)) {
                 result.failed++;
                 result.errors.push({
@@ -91,7 +78,6 @@ export function parseKlaviyoProfileCSV(csvContent) {
                 });
                 continue;
             }
-            // Extract custom properties (non-standard columns)
             const metadata = {};
             const standardFields = [
                 'Email',
@@ -138,9 +124,6 @@ export function parseKlaviyoProfileCSV(csvContent) {
     }
     return { customers, result };
 }
-/**
- * Parse Klaviyo API JSON profiles to Kling format
- */
 export function parseKlaviyoProfileAPI(profiles) {
     const result = {
         total: profiles.length,
@@ -159,7 +142,6 @@ export function parseKlaviyoProfileAPI(profiles) {
                 result.warnings.push(`Profile ${profile.id}: Skipped - no identifier`);
                 continue;
             }
-            // Extract consent data
             const emailSub = attrs.subscriptions?.email?.marketing;
             const smsSub = attrs.subscriptions?.sms?.marketing;
             const customer = {
@@ -190,9 +172,6 @@ export function parseKlaviyoProfileAPI(profiles) {
     }
     return { customers, result };
 }
-/**
- * Parse Klaviyo events to Kling format
- */
 export function parseKlaviyoEvents(events, metricNameMap) {
     const result = {
         total: events.length,
@@ -208,12 +187,10 @@ export function parseKlaviyoEvents(events, metricNameMap) {
             const attrs = event.attributes;
             const metricName = metricNameMap[attrs.metric_id] || 'custom_event';
             const eventType = EVENT_TYPE_MAP[metricName] || 'custom_event';
-            // Extract event data
             const eventData = {
                 klaviyoEventId: attrs.uuid,
                 ...attrs.event_properties,
             };
-            // Map order data if present
             if (attrs.event_properties.Items) {
                 eventData.items = attrs.event_properties.Items.map((item) => ({
                     sku: item.SKU,
@@ -248,9 +225,6 @@ export function parseKlaviyoEvents(events, metricNameMap) {
     }
     return { events: parsedEvents, result };
 }
-/**
- * Parse Klaviyo list CSV with profile emails
- */
 export function parseKlaviyoListCSV(csvContent, listName) {
     const result = {
         total: 0,
@@ -287,13 +261,8 @@ export function parseKlaviyoListCSV(csvContent, listName) {
     }
     return { listName, emails, result };
 }
-/**
- * Translate Klaviyo segment definition to Kling query DSL
- */
 export function translateSegmentDefinition(klaviyoDefinition, metricNameMap = {}) {
     const unsupported = [];
-    // Condition groups are joined with AND
-    // Conditions within a group are joined with OR
     const andConditions = [];
     for (const group of klaviyoDefinition.condition_groups) {
         if (group.conditions.length === 0)
@@ -305,7 +274,6 @@ export function translateSegmentDefinition(klaviyoDefinition, metricNameMap = {}
             }
         }
         else {
-            // Multiple conditions in group = OR
             const orConditions = [];
             for (const condition of group.conditions) {
                 const translated = translateCondition(condition, metricNameMap, unsupported);
@@ -338,7 +306,6 @@ function translateCondition(condition, metricNameMap, unsupported) {
                 ? metricNameMap[condition.metric_id] || 'custom_event'
                 : 'custom_event';
             const eventType = EVENT_TYPE_MAP[metricName] || metricName;
-            // Convert to aggregation
             return {
                 aggregation: {
                     type: 'event_count',
@@ -350,11 +317,9 @@ function translateCondition(condition, metricNameMap, unsupported) {
             };
         }
         case 'list_membership':
-            // List membership requires special handling
             unsupported.push(`List membership condition: ${JSON.stringify(condition)}`);
             return null;
         case 'segment_membership':
-            // Segment membership is complex - would need to inline segment definition
             unsupported.push(`Segment membership condition: ${JSON.stringify(condition)}`);
             return null;
         default:
@@ -362,20 +327,16 @@ function translateCondition(condition, metricNameMap, unsupported) {
             return null;
     }
 }
-// Helper functions
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 function normalizePhone(phone) {
     if (!phone)
         return undefined;
-    // Remove all non-digit characters except leading +
     const cleaned = phone.replace(/[^\d+]/g, '');
     if (!cleaned)
         return undefined;
-    // Ensure E.164 format
     if (!cleaned.startsWith('+')) {
-        // Assume US if no country code
         return `+1${cleaned}`;
     }
     return cleaned;
@@ -395,10 +356,9 @@ function snakeToCamel(str) {
         .replace(/_$/, '');
 }
 function parseTimeframe(timeframe) {
-    // Parse Klaviyo timeframe like "30 days" to number of days
     const match = timeframe.match(/(\d+)\s*(day|week|month|year)/i);
     if (!match)
-        return 30; // Default to 30 days
+        return 30;
     const value = parseInt(match[1], 10);
     const unit = match[2].toLowerCase();
     switch (unit) {
@@ -412,20 +372,14 @@ function parseTimeframe(timeframe) {
             return value;
     }
 }
-/**
- * Validate import data before processing
- */
 export function validateImportData(data, type) {
     const errors = [];
-    // Check if it's a string (CSV) or object (JSON)
     if (typeof data === 'string') {
-        // Try parsing as CSV
         const parsed = Papa.parse(data, { header: true, preview: 5 });
         if (parsed.errors.length > 0) {
             errors.push(...parsed.errors.map((e) => e.message));
         }
         const recordCount = Papa.parse(data, { header: true }).data.length;
-        // Validate expected columns based on type
         if (type === 'profiles') {
             const headers = parsed.meta.fields || [];
             if (!headers.includes('Email') && !headers.includes('Phone Number')) {
@@ -440,7 +394,6 @@ export function validateImportData(data, type) {
         };
     }
     if (typeof data === 'object' && data !== null) {
-        // Check if it's a Klaviyo API response
         if (Array.isArray(data)) {
             if (data.length === 0) {
                 return { valid: true, format: 'json', recordCount: 0, errors: [] };
@@ -459,7 +412,6 @@ export function validateImportData(data, type) {
                 errors,
             };
         }
-        // Check for Klaviyo API wrapper format
         if ('data' in data && Array.isArray(data.data)) {
             return validateImportData(data.data, type);
         }

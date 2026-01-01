@@ -1,8 +1,3 @@
-/**
- * Flow Workers
- *
- * Implements job processors for flow enrollment and step execution.
- */
 import { Worker } from 'bullmq';
 import { getRedisConnection, QUEUE_NAMES, getWorkerConcurrency } from './connection';
 import { getFlowStepQueue } from './queues';
@@ -13,48 +8,28 @@ import { createAuditLog } from '../audit';
 import { canSendMessage } from '../quotas';
 import { buildTemplateData, renderInlineTemplate, } from '../template-renderer';
 import { fetchRecommendationsForMessage, templateNeedsRecommendations, } from '../recommendation-fetcher';
-// System context for background worker audit logs
 const SYSTEM_AUDIT_CONTEXT = {
     userId: undefined,
     ipAddress: 'system',
     userAgent: 'flow-worker',
 };
-// Worker instances
 let flowEnrollmentWorker = null;
 let flowStepWorker = null;
-// ------------------------------------------------------
-// HELPER FUNCTIONS
-// ------------------------------------------------------
-/**
- * Get next node IDs from current node (non-conditional edges)
- * Uses React Flow format: source/target instead of from/to
- * Excludes edges that have sourceHandle (used for conditional splits)
- */
 function getNextNodes(definition, currentNodeId) {
     return definition.edges
         .filter((e) => e.source === currentNodeId && !e.sourceHandle && !e.data?.condition)
         .map((e) => e.target);
 }
-/**
- * Get next node IDs for a specific sourceHandle (used for conditional splits)
- * React Flow uses sourceHandle to identify which output handle an edge connects from
- */
 function getNextNodesByHandle(definition, currentNodeId, handle) {
     return definition.edges
         .filter((e) => e.source === currentNodeId && e.sourceHandle === handle)
         .map((e) => e.target);
 }
-/**
- * Get nested value from object by dot-notation path
- */
 function getNestedValue(obj, path) {
     return path.split('.').reduce((acc, part) => {
         return acc && typeof acc === 'object' ? acc[part] : undefined;
     }, obj);
 }
-/**
- * Evaluate a single condition
- */
 function evaluateCondition(actualValue, operator, expectedValue) {
     switch (operator) {
         case 'eq':
@@ -75,9 +50,6 @@ function evaluateCondition(actualValue, operator, expectedValue) {
             return false;
     }
 }
-/**
- * Evaluate conditions for conditional split
- */
 function evaluateConditions(conditions, contextData) {
     for (const condition of conditions) {
         const value = getNestedValue(contextData, condition.field);
@@ -88,28 +60,14 @@ function evaluateConditions(conditions, contextData) {
     }
     return null;
 }
-// ------------------------------------------------------
-// FLOW ENROLLMENT WORKER
-// ------------------------------------------------------
-/**
- * Process flow enrollment job
- *
- * Triggered when an event matches a flow's trigger:
- * 1. Check if customer can enroll (re-enrollment rules, max enrollments)
- * 2. Check eligibility (opt-out)
- * 3. Create FlowEnrollment record
- * 4. Enqueue first step
- */
 async function processFlowEnrollment(job) {
     const { flowId, customerId, triggerEventId, triggerData } = job.data;
     console.log(`[FlowEnrollmentWorker] Processing enrollment for flow ${flowId}, customer ${customerId}`);
-    // 1. Load flow
     const flow = await prisma.flow.findUnique({ where: { id: flowId } });
     if (!flow || flow.status !== 'active') {
         console.log(`[FlowEnrollmentWorker] Flow ${flowId} not active, skipping`);
         return;
     }
-    // 2. Check re-enrollment rules
     if (!flow.allowReenrollment) {
         const existingEnrollment = await prisma.flowEnrollment.findFirst({
             where: {
@@ -124,7 +82,6 @@ async function processFlowEnrollment(job) {
         }
     }
     else if (flow.reenrollmentWaitDays) {
-        // Check if enough time has passed since last enrollment
         const lastEnrollment = await prisma.flowEnrollment.findFirst({
             where: { flowId, customerId },
             orderBy: { enrolledAt: 'desc' },
@@ -138,7 +95,6 @@ async function processFlowEnrollment(job) {
             }
         }
     }
-    // 3. Check global enrollment cap
     if (flow.maxEnrollments) {
         const enrollmentCount = await prisma.flowEnrollment.count({
             where: { flowId, status: 'active' },
@@ -148,7 +104,6 @@ async function processFlowEnrollment(job) {
             return;
         }
     }
-    // 4. Load customer for eligibility check
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
         select: {
@@ -169,12 +124,10 @@ async function processFlowEnrollment(job) {
         console.error(`[FlowEnrollmentWorker] Customer ${customerId} not found`);
         return;
     }
-    // 5. Basic eligibility check (global opt-out only at enrollment)
     if (customer.optOut) {
         console.log(`[FlowEnrollmentWorker] Customer ${customerId} opted out globally, skipping`);
         return;
     }
-    // 6. Create enrollment
     const definition = flow.definition;
     const contextData = {
         trigger: triggerData,
@@ -202,7 +155,6 @@ async function processFlowEnrollment(job) {
         },
     });
     console.log(`[FlowEnrollmentWorker] Created enrollment ${enrollment.id} for customer ${customerId} in flow ${flowId}`);
-    // 7. Enqueue first step
     const flowStepQueue = getFlowStepQueue();
     await flowStepQueue.add(`step_${enrollment.id}_${definition.startNodeId}`, {
         enrollmentId: enrollment.id,
@@ -211,7 +163,6 @@ async function processFlowEnrollment(job) {
         stepNodeId: definition.startNodeId,
         contextData,
     });
-    // Audit log
     await createAuditLog({
         action: 'flow_enrollment_created',
         resourceType: 'flow_enrollment',
@@ -220,12 +171,6 @@ async function processFlowEnrollment(job) {
         context: SYSTEM_AUDIT_CONTEXT,
     });
 }
-// ------------------------------------------------------
-// FLOW STEP WORKER
-// ------------------------------------------------------
-/**
- * Get the message channel from node type
- */
 function getChannelFromNodeType(nodeType) {
     switch (nodeType) {
         case 'send_email':
@@ -242,15 +187,11 @@ function getChannelFromNodeType(nodeType) {
             return null;
     }
 }
-/**
- * Execute send message step (email, SMS, WhatsApp, RCS, or Push)
- */
 async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) {
     const channel = getChannelFromNodeType(node.type);
     if (!channel) {
         throw new Error(`Invalid send node type: ${node.type}`);
     }
-    // Load customer
     const customer = await prisma.customer.findUnique({
         where: { id: customerId },
         select: {
@@ -271,22 +212,19 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
         console.error(`[FlowStepWorker] Customer ${customerId} not found`);
         throw new Error(`Customer ${customerId} not found`);
     }
-    // Check eligibility
     const eligibility = await checkEligibility(customer, {
         channel,
-        campaignId: enrollment.flowId, // Use flowId for tracking
+        campaignId: enrollment.flowId,
     });
     if (!eligibility.eligible) {
         console.log(`[FlowStepWorker] Customer ${customerId} not eligible: ${eligibility.reasons.join(', ')}`);
         return;
     }
-    // Check quota
     const quotaCheck = await canSendMessage();
     if (!quotaCheck.allowed) {
         console.log(`[FlowStepWorker] Quota exceeded: ${quotaCheck.reason}`);
         return;
     }
-    // Check if we need to fetch product recommendations
     let recommendationsData;
     if (channel === 'email') {
         const emailConfig = node.data.config;
@@ -309,16 +247,13 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
             }
         }
     }
-    // Render message content with context data (including recommendations if available)
     const templateData = buildTemplateData({
         name: customer.name,
         email: customer.email,
         phone: customer.phone,
         firstName: customer.firstName,
         lastName: customer.lastName,
-    }, undefined, // promo
-    undefined, // product
-    recommendationsData);
+    }, undefined, undefined, recommendationsData);
     let recipient;
     let body;
     let subject;
@@ -404,7 +339,6 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
         default:
             throw new Error(`Unsupported channel: ${channel}`);
     }
-    // Create message log with flow tracking fields
     const messageLog = await prisma.messageLog.create({
         data: {
             customerId,
@@ -414,13 +348,11 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
             subject: subject || null,
             deliveryStatus: 'pending',
             correlationId: enrollment.correlationId,
-            // Flow tracking fields (links message to flow enrollment)
             flowId: enrollment.flowId,
             flowEnrollmentId: enrollment.id,
             flowStepId: stepNodeId,
         },
     });
-    // Send via provider
     try {
         const provider = getProviderForChannel(channel);
         const outgoingMessage = {
@@ -431,7 +363,6 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
             metadata,
         };
         const result = await provider.send(outgoingMessage);
-        // Update message log
         await prisma.messageLog.update({
             where: { id: messageLog.id },
             data: {
@@ -442,7 +373,6 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
                 errorMessage: result.error,
             },
         });
-        // Update customer last contact time
         if (result.success) {
             await prisma.customer.update({
                 where: { id: customerId },
@@ -452,7 +382,6 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
         console.log(`[FlowStepWorker] Sent ${channel} to ${customerId}, messageLog: ${messageLog.id}, success: ${result.success}`);
     }
     catch (error) {
-        // Update message log with error
         await prisma.messageLog.update({
             where: { id: messageLog.id },
             data: {
@@ -463,19 +392,9 @@ async function executeSendMessageStep(node, enrollment, customerId, stepNodeId) 
         throw error;
     }
 }
-/**
- * Process flow step job
- *
- * Executes a single step in a flow:
- * 1. Load enrollment and flow
- * 2. Execute step action (send message, wait, evaluate condition)
- * 3. Update enrollment state
- * 4. Enqueue next step(s)
- */
 async function processFlowStep(job) {
     const { enrollmentId, flowId, customerId, stepNodeId, contextData } = job.data;
     console.log(`[FlowStepWorker] Processing step ${stepNodeId} for enrollment ${enrollmentId}`);
-    // 1. Load enrollment
     const enrollment = await prisma.flowEnrollment.findUnique({
         where: { id: enrollmentId },
     });
@@ -483,13 +402,11 @@ async function processFlowStep(job) {
         console.log(`[FlowStepWorker] Enrollment ${enrollmentId} not active, skipping`);
         return;
     }
-    // 2. Load flow and find current node
     const flow = await prisma.flow.findUnique({ where: { id: flowId } });
     if (!flow) {
         console.error(`[FlowStepWorker] Flow ${flowId} not found`);
         throw new Error(`Flow ${flowId} not found`);
     }
-    // Check if flow is still active
     if (flow.status !== 'active') {
         console.log(`[FlowStepWorker] Flow ${flowId} is no longer active, exiting enrollment`);
         await prisma.flowEnrollment.update({
@@ -509,7 +426,6 @@ async function processFlowStep(job) {
         throw new Error(`Node ${stepNodeId} not found in flow ${flowId}`);
     }
     console.log(`[FlowStepWorker] Executing step ${stepNodeId} (type: ${node.type})`);
-    // 3. Execute step based on type
     let nextNodeIds = [];
     const flowStepQueue = getFlowStepQueue();
     try {
@@ -523,11 +439,9 @@ async function processFlowStep(job) {
                 nextNodeIds = getNextNodes(definition, stepNodeId);
                 break;
             case 'wait': {
-                // Wait step: schedule next step with delay
                 const waitConfig = node.data.config;
-                const delayMs = waitConfig.delay * 1000; // Convert seconds to milliseconds
+                const delayMs = waitConfig.delay * 1000;
                 nextNodeIds = getNextNodes(definition, stepNodeId);
-                // Enqueue next steps with delay
                 for (const nextNodeId of nextNodeIds) {
                     await flowStepQueue.add(`step_${enrollmentId}_${nextNodeId}`, {
                         enrollmentId,
@@ -539,7 +453,6 @@ async function processFlowStep(job) {
                         delay: delayMs,
                     });
                 }
-                // Update enrollment
                 await prisma.flowEnrollment.update({
                     where: { id: enrollmentId },
                     data: {
@@ -549,7 +462,6 @@ async function processFlowStep(job) {
                     },
                 });
                 console.log(`[FlowStepWorker] Wait step scheduled ${nextNodeIds.length} next steps with ${delayMs}ms delay`);
-                // Audit log
                 await createAuditLog({
                     action: 'flow_step_executed',
                     resourceType: 'flow_enrollment',
@@ -557,11 +469,10 @@ async function processFlowStep(job) {
                     metadata: { flowId, customerId, stepNodeId, stepType: node.type },
                     context: SYSTEM_AUDIT_CONTEXT,
                 });
-                return; // Early return - next steps enqueued with delay
+                return;
             }
             case 'conditional_split': {
                 const splitConfig = node.data.config;
-                // Refresh customer data for condition evaluation
                 const customer = await prisma.customer.findUnique({
                     where: { id: customerId },
                     select: {
@@ -570,7 +481,6 @@ async function processFlowStep(job) {
                         lastOrderAt: true,
                     },
                 });
-                // Merge fresh customer data into context
                 const enrichedContext = {
                     ...contextData,
                     customer: {
@@ -582,12 +492,10 @@ async function processFlowStep(job) {
                 };
                 const matchingCondition = evaluateConditions(splitConfig.conditions, enrichedContext);
                 if (matchingCondition) {
-                    // Use sourceHandle to route - "true" handle for matched conditions
                     nextNodeIds = getNextNodesByHandle(definition, stepNodeId, 'true');
                     console.log(`[FlowStepWorker] Conditional split matched: ${matchingCondition.label}, routing to "true" branch, next nodes: ${nextNodeIds.join(', ')}`);
                 }
                 else {
-                    // No condition matched - use "false" handle
                     nextNodeIds = getNextNodesByHandle(definition, stepNodeId, 'false');
                     console.log(`[FlowStepWorker] No condition matched, routing to "false" branch, next nodes: ${nextNodeIds.join(', ')}`);
                 }
@@ -612,10 +520,9 @@ async function processFlowStep(job) {
                     context: SYSTEM_AUDIT_CONTEXT,
                 });
                 console.log(`[FlowStepWorker] Flow completed for enrollment ${enrollmentId}`);
-                return; // Early return - flow is done
+                return;
             }
             case 'trigger':
-                // Trigger node is the entry point - just move to next nodes
                 console.log(`[FlowStepWorker] Processing trigger node, moving to next steps`);
                 nextNodeIds = getNextNodes(definition, stepNodeId);
                 break;
@@ -623,7 +530,6 @@ async function processFlowStep(job) {
                 console.error(`[FlowStepWorker] Unknown step type: ${node.type}`);
                 throw new Error(`Unknown step type: ${node.type}`);
         }
-        // 4. Enqueue next steps (for non-wait, non-exit steps)
         if (nextNodeIds.length > 0) {
             for (const nextNodeId of nextNodeIds) {
                 await flowStepQueue.add(`step_${enrollmentId}_${nextNodeId}`, {
@@ -634,7 +540,6 @@ async function processFlowStep(job) {
                     contextData,
                 });
             }
-            // Update enrollment
             await prisma.flowEnrollment.update({
                 where: { id: enrollmentId },
                 data: {
@@ -645,7 +550,6 @@ async function processFlowStep(job) {
             });
         }
         else {
-            // No next nodes - flow has ended
             await prisma.flowEnrollment.update({
                 where: { id: enrollmentId },
                 data: {
@@ -657,7 +561,6 @@ async function processFlowStep(job) {
             });
             console.log(`[FlowStepWorker] No next nodes, flow completed for enrollment ${enrollmentId}`);
         }
-        // Audit log
         await createAuditLog({
             action: 'flow_step_executed',
             resourceType: 'flow_enrollment',
@@ -667,7 +570,6 @@ async function processFlowStep(job) {
         });
     }
     catch (error) {
-        // Update enrollment with error
         await prisma.flowEnrollment.update({
             where: { id: enrollmentId },
             data: {
@@ -679,12 +581,6 @@ async function processFlowStep(job) {
         throw error;
     }
 }
-// ------------------------------------------------------
-// WORKER MANAGEMENT
-// ------------------------------------------------------
-/**
- * Start the flow enrollment worker
- */
 export function startFlowEnrollmentWorker() {
     if (flowEnrollmentWorker) {
         console.log('[FlowEnrollmentWorker] Already running');
@@ -703,9 +599,6 @@ export function startFlowEnrollmentWorker() {
     console.log('[FlowEnrollmentWorker] Started');
     return flowEnrollmentWorker;
 }
-/**
- * Start the flow step worker
- */
 export function startFlowStepWorker() {
     if (flowStepWorker) {
         console.log('[FlowStepWorker] Already running');
@@ -713,7 +606,7 @@ export function startFlowStepWorker() {
     }
     flowStepWorker = new Worker(QUEUE_NAMES.FLOW_STEP, processFlowStep, {
         connection: getRedisConnection(),
-        concurrency: getWorkerConcurrency() * 2, // Higher concurrency for steps
+        concurrency: getWorkerConcurrency() * 2,
     });
     flowStepWorker.on('completed', (job) => {
         console.log(`[FlowStepWorker] Job ${job.id} completed`);
@@ -724,17 +617,11 @@ export function startFlowStepWorker() {
     console.log('[FlowStepWorker] Started');
     return flowStepWorker;
 }
-/**
- * Start all flow workers
- */
 export function startFlowWorkers() {
     startFlowEnrollmentWorker();
     startFlowStepWorker();
     console.log('[FlowWorkers] All flow workers started');
 }
-/**
- * Stop all flow workers
- */
 export async function stopFlowWorkers() {
     const stopPromises = [];
     if (flowEnrollmentWorker) {
@@ -748,9 +635,6 @@ export async function stopFlowWorkers() {
     await Promise.all(stopPromises);
     console.log('[FlowWorkers] All flow workers stopped');
 }
-/**
- * Check if flow workers are running
- */
 export function areFlowWorkersRunning() {
     return flowEnrollmentWorker !== null && flowStepWorker !== null;
 }

@@ -1,17 +1,9 @@
-/**
- * Import Endpoints
- *
- * API endpoints for importing data from Klaviyo and other platforms.
- * Supports CSV and JSON formats.
- */
 import { z } from 'zod';
 import { createAuthRoleFactory } from '../factories';
 import prisma from '../utils/prisma';
 import { parseKlaviyoProfileCSV, parseKlaviyoProfileAPI, parseKlaviyoEvents, validateImportData, translateSegmentDefinition, } from '../utils/klaviyo-import';
-// Role factories
 const managerFactory = createAuthRoleFactory('admin', 'manager');
 const adminFactory = createAuthRoleFactory('admin');
-// Common schemas
 const importResultSchema = z.object({
     total: z.number(),
     imported: z.number(),
@@ -25,10 +17,6 @@ const importResultSchema = z.object({
     })),
     warnings: z.array(z.string()),
 });
-// -------------------------------------------------------------------
-// POST /v1/imports/klaviyo/validate
-// Validate import data before processing
-// -------------------------------------------------------------------
 export const validateImportEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Validate Import Data',
@@ -53,10 +41,6 @@ export const validateImportEndpoint = managerFactory.build({
         return result;
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/imports/klaviyo/profiles
-// Import customer profiles from Klaviyo
-// -------------------------------------------------------------------
 export const importProfilesEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Import Klaviyo Profiles',
@@ -72,17 +56,13 @@ export const importProfilesEndpoint = managerFactory.build({
         importId: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Parse the data based on format
         let parseResult;
         if (typeof input.data === 'string') {
-            // CSV format
             parseResult = parseKlaviyoProfileCSV(input.data);
         }
         else {
-            // JSON format (Klaviyo API export)
             parseResult = parseKlaviyoProfileAPI(input.data);
         }
-        // Import customers in batches
         const batchSize = 100;
         const importedIds = [];
         const result = { ...parseResult.result };
@@ -90,7 +70,6 @@ export const importProfilesEndpoint = managerFactory.build({
             const batch = parseResult.customers.slice(i, i + batchSize);
             for (const customerData of batch) {
                 try {
-                    // Find existing by email or phone
                     let existingCustomer = null;
                     if (customerData.email) {
                         existingCustomer = await prisma.customer.findUnique({
@@ -104,7 +83,6 @@ export const importProfilesEndpoint = managerFactory.build({
                     }
                     if (existingCustomer) {
                         if (input.updateExisting) {
-                            // Update existing customer - merge metadata
                             const existingMetadata = existingCustomer.metadata || {};
                             const newMetadata = customerData.metadata || {};
                             const updated = await prisma.customer.update({
@@ -128,8 +106,6 @@ export const importProfilesEndpoint = managerFactory.build({
                         }
                     }
                     else {
-                        // Create new customer
-                        // Only set externalId if it has a value (avoid unique constraint on null)
                         const createData = {
                             email: customerData.email,
                             phone: customerData.phone,
@@ -158,7 +134,6 @@ export const importProfilesEndpoint = managerFactory.build({
                 }
             }
         }
-        // Create import history record
         const importHistory = await prisma.importHistory.create({
             data: {
                 type: 'klaviyo_profiles',
@@ -177,10 +152,6 @@ export const importProfilesEndpoint = managerFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/imports/klaviyo/events
-// Import event history from Klaviyo
-// -------------------------------------------------------------------
 export const importEventsEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Import Klaviyo Events',
@@ -197,28 +168,22 @@ export const importEventsEndpoint = adminFactory.build({
         importId: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Parse events
         const { events, result } = parseKlaviyoEvents(input.events, input.metricNameMap);
-        // Build email to customer ID mapping if provided
         const profileIdToCustomerId = new Map();
         if (input.emailToCustomerIdMap) {
             for (const [email, customerId] of Object.entries(input.emailToCustomerIdMap)) {
                 profileIdToCustomerId.set(email, customerId);
             }
         }
-        // Import events
         let importedCount = 0;
         for (const { profileId, event } of events) {
             try {
-                // Try to find customer
                 const customerId = profileIdToCustomerId.get(profileId);
                 if (!customerId) {
-                    // Skip if no mapping
                     result.skipped++;
                     result.imported--;
                     continue;
                 }
-                // Check for duplicate by eventData.klaviyoEventId
                 if (input.skipDuplicates && event.data.klaviyoEventId) {
                     const existing = await prisma.customerEvent.findFirst({
                         where: {
@@ -233,7 +198,6 @@ export const importEventsEndpoint = adminFactory.build({
                         continue;
                     }
                 }
-                // Create event
                 await prisma.customerEvent.create({
                     data: {
                         customerId,
@@ -257,7 +221,6 @@ export const importEventsEndpoint = adminFactory.build({
                 });
             }
         }
-        // Create import history
         const importHistory = await prisma.importHistory.create({
             data: {
                 type: 'klaviyo_events',
@@ -276,10 +239,6 @@ export const importEventsEndpoint = adminFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// POST /v1/imports/klaviyo/segment
-// Translate Klaviyo segment definition to Kling query DSL
-// -------------------------------------------------------------------
 export const translateSegmentEndpoint = managerFactory.build({
     method: 'post',
     shortDescription: 'Translate Klaviyo Segment',
@@ -314,10 +273,6 @@ export const translateSegmentEndpoint = managerFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// GET /v1/imports/history
-// Get import history
-// -------------------------------------------------------------------
 export const listImportHistoryEndpoint = managerFactory.build({
     method: 'get',
     shortDescription: 'List Import History',
@@ -375,10 +330,6 @@ export const listImportHistoryEndpoint = managerFactory.build({
         };
     },
 });
-// -------------------------------------------------------------------
-// GET /v1/imports/:importId
-// Get import details
-// -------------------------------------------------------------------
 export const getImportDetailsEndpoint = managerFactory.build({
     method: 'get',
     shortDescription: 'Get Import Details',

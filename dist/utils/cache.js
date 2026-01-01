@@ -1,17 +1,7 @@
-/**
- * Redis Cache Utilities
- *
- * Provides caching functionality for frequently accessed data
- * to reduce database load.
- */
 import Redis from 'ioredis';
 import { logger } from './logger.js';
 import { metrics } from './metrics.js';
-// Singleton Redis client for caching
 let redisClient = null;
-/**
- * Get or create Redis client for caching
- */
 export function getRedisClient() {
     if (!redisClient) {
         const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -29,25 +19,16 @@ export function getRedisClient() {
     }
     return redisClient;
 }
-/**
- * Cache key prefixes
- */
 export const CACHE_KEYS = {
     SUPPRESSION_LIST: 'cache:suppression:',
     QUOTA_STATUS: 'cache:quota:',
     SETTINGS: 'cache:settings',
 };
-/**
- * Default TTLs in seconds
- */
 export const CACHE_TTL = {
-    SUPPRESSION_LIST: 120, // 2 minutes
-    QUOTA_STATUS: 60, // 1 minute
-    SETTINGS: 300, // 5 minutes
+    SUPPRESSION_LIST: 120,
+    QUOTA_STATUS: 60,
+    SETTINGS: 300,
 };
-/**
- * Get cached value
- */
 export async function getCache(key) {
     try {
         const redis = getRedisClient();
@@ -68,9 +49,6 @@ export async function getCache(key) {
         return null;
     }
 }
-/**
- * Set cached value with TTL
- */
 export async function setCache(key, value, ttlSeconds) {
     try {
         const redis = getRedisClient();
@@ -81,9 +59,6 @@ export async function setCache(key, value, ttlSeconds) {
         logger.error('Cache set error', { component: 'Cache', key, error: err.message });
     }
 }
-/**
- * Delete cached value
- */
 export async function deleteCache(key) {
     try {
         const redis = getRedisClient();
@@ -94,9 +69,6 @@ export async function deleteCache(key) {
         logger.error('Cache delete error', { component: 'Cache', key, error: err.message });
     }
 }
-/**
- * Delete cached values by pattern
- */
 export async function deleteCachePattern(pattern) {
     try {
         const redis = getRedisClient();
@@ -118,9 +90,6 @@ export async function deleteCachePattern(pattern) {
         });
     }
 }
-/**
- * Close Redis connection (for graceful shutdown)
- */
 export async function closeCache() {
     if (redisClient) {
         await redisClient.quit();

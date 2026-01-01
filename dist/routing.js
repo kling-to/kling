@@ -23,12 +23,10 @@ import * as setupEndpoints from './endpoints/setup';
 import * as updateEndpoints from './endpoints/updates';
 const routing = {
     v1: {
-        // Health checks - system status
         health: {
             '': healthEndpoints.healthEndpoint,
             metrics: healthEndpoints.metricsEndpoint,
         },
-        // Authentication - must authenticate first
         auth: {
             register: authEndpoints.registerEndpoint,
             login: authEndpoints.loginEndpoint,
@@ -38,7 +36,6 @@ const routing = {
             'forgot-password': authEndpoints.forgotPasswordEndpoint,
             'reset-password': authEndpoints.resetPasswordEndpoint,
         },
-        // Settings - global configuration
         settings: {
             '': {
                 get: settingsEndpoints.getSettingsEndpoint,
@@ -47,7 +44,6 @@ const routing = {
             signup: settingsEndpoints.getSignupSettingsEndpoint,
             timezones: settingsEndpoints.getTimezonesEndpoint,
         },
-        // Users - team management
         users: {
             '': userEndpoints.listUsersEndpoint,
             ':userId': {
@@ -56,7 +52,6 @@ const routing = {
                 delete: userEndpoints.deleteUserEndpoint,
             },
         },
-        // Invitations - invite team members
         invitations: {
             '': {
                 post: invitationEndpoints.createInvitationEndpoint,
@@ -68,7 +63,6 @@ const routing = {
             accept: invitationEndpoints.acceptInvitationEndpoint,
             validate: invitationEndpoints.validateInvitationEndpoint,
         },
-        // Customers - manage customer data
         customers: {
             '': {
                 get: customerEndpoints.listCustomersEndpoint,
@@ -80,11 +74,9 @@ const routing = {
                 events: customerEndpoints.listCustomerEventsEndpoint,
             },
         },
-        // Events - track customer activity
         events: {
             ingest: customerEndpoints.ingestCustomerEventEndpoint,
         },
-        // Campaigns - marketing campaign management
         campaigns: {
             '': {
                 post: campaignEndpoints.createCampaignEndpoint,
@@ -113,7 +105,6 @@ const routing = {
                 },
             },
         },
-        // Flows - event-driven automation sequences
         flows: {
             '': {
                 post: flowEndpoints.createFlowEndpoint,
@@ -137,7 +128,6 @@ const routing = {
                 revenue: flowEndpoints.getFlowRevenueEndpoint,
             },
         },
-        // Email Templates - reusable email content
         'email-templates': {
             '': {
                 post: emailTemplateEndpoints.createEmailTemplateEndpoint,
@@ -152,7 +142,6 @@ const routing = {
                 duplicate: emailTemplateEndpoints.duplicateEmailTemplateEndpoint,
             },
         },
-        // Forms - signup forms, popups, embedded forms
         forms: {
             '': {
                 post: formEndpoints.createFormEndpoint,
@@ -169,7 +158,6 @@ const routing = {
                 export: formEndpoints.exportFormSubmissionsEndpoint,
             },
         },
-        // Public endpoints for forms (no auth required)
         public: {
             forms: {
                 ':formId': {
@@ -182,13 +170,11 @@ const routing = {
                 },
             },
         },
-        // Analytics - revenue attribution and insights
         analytics: {
             revenue: {
                 dashboard: analyticsEndpoints.getRevenueDashboardEndpoint,
             },
         },
-        // Product Recommendations - personalized product suggestions
         recommendations: {
             'best-sellers': recommendationEndpoints.getBestSellersEndpoint,
             analytics: recommendationEndpoints.getRecommendationAnalyticsEndpoint,
@@ -200,7 +186,6 @@ const routing = {
                 html: recommendationEndpoints.generateRecommendationsHtmlEndpoint,
             },
         },
-        // Products - product catalog for recommendations
         products: {
             '': {
                 get: recommendationEndpoints.listProductsEndpoint,
@@ -212,9 +197,7 @@ const routing = {
                 delete: recommendationEndpoints.deleteProductEndpoint,
             },
         },
-        // Browse Events - track customer behavior for recommendations
         'browse-events': recommendationEndpoints.trackBrowseEventEndpoint,
-        // Imports - Klaviyo migration tools
         imports: {
             klaviyo: {
                 validate: importEndpoints.validateImportEndpoint,
@@ -225,7 +208,6 @@ const routing = {
             history: importEndpoints.listImportHistoryEndpoint,
             ':importId': importEndpoints.getImportDetailsEndpoint,
         },
-        // Messages - message logs and history
         messages: {
             logs: messageEndpoints.listMessageLogsEndpoint,
             ':messageId': {
@@ -233,7 +215,6 @@ const routing = {
                 retry: messageEndpoints.retryMessageEndpoint,
             },
         },
-        // Experiments - A/B testing
         experiments: {
             '': {
                 post: experimentEndpoints.createExperimentEndpoint,
@@ -248,7 +229,6 @@ const routing = {
             assign: experimentEndpoints.assignCohortEndpoint,
             conversion: experimentEndpoints.recordConversionEndpoint,
         },
-        // Consent - privacy and compliance
         consent: {
             record: consentEndpoints.recordConsentEndpoint,
             ':customerId': {
@@ -267,19 +247,16 @@ const routing = {
             'export-data': consentEndpoints.requestDataExportEndpoint,
             'delete-data': consentEndpoints.requestDataDeletionEndpoint,
         },
-        // Webhooks - external integrations
         webhooks: {
             'delivery/:provider': webhookEndpoints.deliveryWebhookEndpoint,
             orders: webhookEndpoints.orderWebhookEndpoint,
         },
-        // Admin - system administration
         admin: {
             system: {
                 health: adminEndpoints.systemHealthEndpoint,
             },
             audit: adminEndpoints.auditListEndpoint,
             quota: adminEndpoints.quotaUsageEndpoint,
-            // Auto-tune endpoints
             'auto-tune': {
                 status: adminEndpoints.autoTuneStatusEndpoint,
                 trigger: adminEndpoints.triggerAutoTuneEndpoint,
@@ -292,7 +269,6 @@ const routing = {
                 },
                 run: adminEndpoints.runAutoTuneAllEndpoint,
             },
-            // Send time optimization endpoints
             'send-time': {
                 calculate: adminEndpoints.calculateSendTimeProfilesEndpoint,
                 stats: adminEndpoints.getSendTimeStatsEndpoint,
@@ -303,13 +279,11 @@ const routing = {
                     ':campaignId': adminEndpoints.previewCampaignSendTimesEndpoint,
                 },
             },
-            // Browse abandonment endpoints
             'browse-abandonment': {
                 '': adminEndpoints.browseAbandonmentStatusEndpoint,
                 trigger: adminEndpoints.triggerBrowseAbandonmentEndpoint,
                 stats: adminEndpoints.browseAbandonmentStatsEndpoint,
             },
-            // Prediction analytics endpoints
             predictions: {
                 status: adminEndpoints.predictionStatusEndpoint,
                 trigger: adminEndpoints.triggerPredictionEndpoint,
@@ -321,7 +295,6 @@ const routing = {
                     },
                 },
             },
-            // Database backup endpoints
             backups: {
                 status: backupEndpoints.getBackupStatusEndpoint,
                 '': {
@@ -341,7 +314,6 @@ const routing = {
                     delete: backupEndpoints.deleteBackupEndpoint,
                 },
             },
-            // System update endpoints
             updates: {
                 current: updateEndpoints.getCurrentVersionEndpoint,
                 available: updateEndpoints.getAvailableVersionsEndpoint,
@@ -352,7 +324,6 @@ const routing = {
                 status: updateEndpoints.getUpdateStatusEndpoint,
             },
         },
-        // Orders - order management
         orders: {
             '': {
                 get: orderEndpoints.listOrdersEndpoint,
@@ -364,7 +335,6 @@ const routing = {
                 delete: orderEndpoints.deleteOrderEndpoint,
             },
         },
-        // Integrations - e-commerce platform connections
         integrations: {
             '': integrationEndpoints.listIntegrationsEndpoint,
             ':integrationId': {
@@ -374,46 +344,37 @@ const routing = {
                 },
                 sync: integrationEndpoints.triggerSyncEndpoint,
             },
-            // Shopify OAuth flow
             shopify: {
                 install: integrationEndpoints.shopifyInstallEndpoint,
                 callback: integrationEndpoints.shopifyCallbackEndpoint,
                 webhooks: integrationEndpoints.shopifyWebhookEndpoint,
             },
-            // WooCommerce API key connection
             woocommerce: {
                 connect: integrationEndpoints.woocommerceConnectEndpoint,
                 webhooks: integrationEndpoints.woocommerceWebhookEndpoint,
             },
-            // BigCommerce OAuth flow
             bigcommerce: {
                 install: integrationEndpoints.bigcommerceInstallEndpoint,
                 callback: integrationEndpoints.bigcommerceCallbackEndpoint,
             },
-            // Wix OAuth flow
             wix: {
                 install: integrationEndpoints.wixInstallEndpoint,
                 callback: integrationEndpoints.wixCallbackEndpoint,
             },
-            // Salesforce OAuth flow
             salesforce: {
                 install: integrationEndpoints.salesforceInstallEndpoint,
                 callback: integrationEndpoints.salesforceCallbackEndpoint,
             },
-            // Magento integration token connection
             magento: {
                 connect: integrationEndpoints.magentoConnectEndpoint,
                 webhooks: integrationEndpoints.magentoWebhookEndpoint,
             },
-            // Square OAuth flow
             square: {
                 install: integrationEndpoints.squareInstallEndpoint,
                 callback: integrationEndpoints.squareCallbackEndpoint,
                 webhooks: integrationEndpoints.squareWebhookEndpoint,
             },
         },
-        // Setup - first-time installation setup
-        // Public endpoints for creating the first admin account
         setup: {
             status: setupEndpoints.setupStatusEndpoint,
             'create-admin': setupEndpoints.createAdminEndpoint,

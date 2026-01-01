@@ -4,7 +4,6 @@ import prisma from '../utils/prisma';
 import createHttpError from 'http-errors';
 import { providerRegistry } from '../providers';
 import { objectIdSchema } from '../utils/validation';
-// Message log schema
 const messageLogSchema = z.object({
     id: z.string(),
     campaignId: z.string().nullable(),
@@ -27,9 +26,7 @@ const messageLogSchema = z.object({
     createdAt: z.date(),
     updatedAt: z.date(),
 });
-// Factory for message endpoints - all roles can access
 const messageFactory = createAuthRoleFactory('admin', 'manager', 'staff');
-// List message logs endpoint
 export const listMessageLogsEndpoint = messageFactory.build({
     method: 'get',
     shortDescription: 'List Message Logs',
@@ -54,8 +51,6 @@ export const listMessageLogsEndpoint = messageFactory.build({
     handler: async ({ input }) => {
         const { page, pageSize, campaignId, customerId, channel, status, isTest } = input;
         const skip = (page - 1) * pageSize;
-        // Build where clause
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const where = {};
         if (campaignId)
             where.campaignId = campaignId;
@@ -85,7 +80,6 @@ export const listMessageLogsEndpoint = messageFactory.build({
         };
     },
 });
-// Get message log endpoint
 export const getMessageLogEndpoint = messageFactory.build({
     method: 'get',
     shortDescription: 'Get Message Log',
@@ -129,7 +123,6 @@ export const getMessageLogEndpoint = messageFactory.build({
         return message;
     },
 });
-// Retry message endpoint - requires admin or owner role
 const retryFactory = createAuthRoleFactory('admin', 'manager');
 export const retryMessageEndpoint = retryFactory.build({
     method: 'post',
@@ -156,21 +149,17 @@ export const retryMessageEndpoint = retryFactory.build({
         if (!message) {
             throw createHttpError(404, 'Message not found');
         }
-        // Only allow retry for failed messages
         if (!['failed', 'bounced'].includes(message.deliveryStatus)) {
             throw createHttpError(400, 'Can only retry failed or bounced messages');
         }
-        // Check retry limit
         const MAX_RETRIES = 3;
         if (message.retryCount >= MAX_RETRIES) {
             throw createHttpError(400, `Maximum retry limit (${MAX_RETRIES}) reached`);
         }
-        // Get provider
         const provider = providerRegistry.getForChannel(message.channel);
         if (!provider) {
             throw createHttpError(500, `No provider available for channel: ${message.channel}`);
         }
-        // Attempt to resend
         const result = await provider.send({
             to: message.recipient,
             subject: message.subject || undefined,
@@ -183,7 +172,6 @@ export const retryMessageEndpoint = retryFactory.build({
             },
         });
         if (result.success) {
-            // Update original message with retry info
             await prisma.messageLog.update({
                 where: { id: message.id },
                 data: {
@@ -197,7 +185,6 @@ export const retryMessageEndpoint = retryFactory.build({
             return { success: true };
         }
         else {
-            // Update retry count but keep failed status
             await prisma.messageLog.update({
                 where: { id: message.id },
                 data: {

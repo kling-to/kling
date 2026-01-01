@@ -6,19 +6,14 @@ import routing from './routing';
 import { initializeProviders } from './providers';
 import { initializeBullMQ, shutdownBullMQ } from './utils/bullmq';
 import { initializeIntegrations } from './integrations';
-// Initialize message providers
 initializeProviders().catch((err) => {
     console.error('[Providers] Failed to initialize:', err);
 });
-// Initialize BullMQ workers and sync schedules
 initializeBullMQ().catch((err) => {
     console.error('[BullMQ] Failed to initialize:', err);
 });
-// Initialize e-commerce platform integrations
 initializeIntegrations();
-// Start server
 createServer(config, routing);
-// Graceful shutdown handling
 const shutdown = async (signal) => {
     console.log(`\n[Server] Received ${signal}, shutting down gracefully...`);
     try {

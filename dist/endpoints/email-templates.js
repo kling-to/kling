@@ -1,17 +1,9 @@
-/**
- * Email Templates Endpoints
- *
- * CRUD operations for reusable email templates.
- */
 import { z } from 'zod';
 import createHttpError from 'http-errors';
 import prisma from '../utils/prisma';
 import { authFactory } from '../factories';
 import { createAuditLog, extractAuditContext } from '../utils/audit';
 import { renderEmailContent, buildTemplateData } from '../utils/template-renderer';
-// ------------------------------------------------------
-// SCHEMAS
-// ------------------------------------------------------
 const emailTemplateCategorySchema = z.enum([
     'transactional',
     'promotional',
@@ -30,7 +22,7 @@ const emailTemplateInputSchema = z.object({
     preheader: z.string().max(150).optional().nullable(),
     body: z.string().min(1),
     html: z.string().optional().nullable(),
-    designJson: z.any().optional().nullable(), // Unlayer visual editor design JSON
+    designJson: z.any().optional().nullable(),
     signature: z.string().max(500).optional().nullable(),
     isPublic: z.boolean().optional().default(true),
     thumbnailUrl: z.string().url().optional().nullable(),
@@ -45,7 +37,7 @@ const emailTemplateOutputSchema = z.object({
     preheader: z.string().nullable(),
     body: z.string(),
     html: z.string().nullable(),
-    designJson: z.any().nullable(), // Unlayer visual editor design JSON
+    designJson: z.any().nullable(),
     signature: z.string().nullable(),
     isDefault: z.boolean(),
     isPublic: z.boolean(),
@@ -56,9 +48,6 @@ const emailTemplateOutputSchema = z.object({
     createdAt: z.string(),
     updatedAt: z.string(),
 });
-// ------------------------------------------------------
-// LIST TEMPLATES
-// ------------------------------------------------------
 export const listEmailTemplatesEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Email Templates',
@@ -117,9 +106,6 @@ export const listEmailTemplatesEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// GET TEMPLATE BY ID
-// ------------------------------------------------------
 export const getEmailTemplateEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Email Template',
@@ -147,9 +133,6 @@ export const getEmailTemplateEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// CREATE TEMPLATE
-// ------------------------------------------------------
 export const createEmailTemplateEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Create Email Template',
@@ -197,9 +180,6 @@ export const createEmailTemplateEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// UPDATE TEMPLATE
-// ------------------------------------------------------
 export const updateEmailTemplateEndpoint = authFactory.build({
     method: 'patch',
     shortDescription: 'Update Email Template',
@@ -227,7 +207,6 @@ export const updateEmailTemplateEndpoint = authFactory.build({
     handler: async ({ input, ctx }) => {
         const userId = ctx.user.sub;
         const { templateId, ...updateData } = input;
-        // Check ownership (can't edit others' templates unless you're admin)
         const existing = await prisma.emailTemplate.findFirst({
             where: { id: templateId },
         });
@@ -237,7 +216,6 @@ export const updateEmailTemplateEndpoint = authFactory.build({
         if (existing.createdBy !== userId && !existing.isDefault) {
             throw createHttpError(403, 'You can only edit your own templates');
         }
-        // System default templates can only be edited by admins
         if (existing.isDefault && !['OWNER', 'ADMIN'].includes(ctx.user.role || '')) {
             throw createHttpError(403, 'Only admins can edit default templates');
         }
@@ -267,9 +245,6 @@ export const updateEmailTemplateEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// DELETE TEMPLATE
-// ------------------------------------------------------
 export const deleteEmailTemplateEndpoint = authFactory.build({
     method: 'delete',
     shortDescription: 'Delete Email Template',
@@ -309,9 +284,6 @@ export const deleteEmailTemplateEndpoint = authFactory.build({
         return { message: 'Email template deleted successfully' };
     },
 });
-// ------------------------------------------------------
-// DUPLICATE TEMPLATE
-// ------------------------------------------------------
 export const duplicateEmailTemplateEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Duplicate Email Template',
@@ -348,11 +320,10 @@ export const duplicateEmailTemplateEndpoint = authFactory.build({
                 html: existing.html,
                 designJson: existing.designJson,
                 signature: existing.signature,
-                isPublic: false, // Copies are private by default
+                isPublic: false,
                 createdBy: userId,
             },
         });
-        // Increment usage count on the original
         await prisma.emailTemplate.update({
             where: { id: input.templateId },
             data: { usageCount: { increment: 1 } },
@@ -375,9 +346,6 @@ export const duplicateEmailTemplateEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PREVIEW TEMPLATE
-// ------------------------------------------------------
 export const previewEmailTemplateEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Preview Email Template',
@@ -385,13 +353,11 @@ export const previewEmailTemplateEndpoint = authFactory.build({
     tag: 'Email Templates',
     input: z.object({
         templateId: z.string().optional(),
-        // Or provide inline content
         subject: z.string().optional(),
         preheader: z.string().optional(),
         body: z.string().optional(),
         html: z.string().optional(),
         signature: z.string().optional(),
-        // Sample data
         sampleData: z
             .object({
             name: z.string().optional(),
@@ -424,7 +390,6 @@ export const previewEmailTemplateEndpoint = authFactory.build({
             html: input.html || null,
             signature: input.signature || null,
         };
-        // If templateId provided, fetch template content
         if (input.templateId) {
             const template = await prisma.emailTemplate.findFirst({
                 where: {
@@ -443,7 +408,6 @@ export const previewEmailTemplateEndpoint = authFactory.build({
                 signature: template.signature,
             };
         }
-        // Build sample data
         const sampleCustomer = {
             name: input.sampleData?.name || 'John Doe',
             email: input.sampleData?.email || 'john@example.com',
@@ -464,7 +428,6 @@ export const previewEmailTemplateEndpoint = authFactory.build({
         };
         const templateData = buildTemplateData(sampleCustomer, samplePromo, sampleProduct);
         const rendered = renderEmailContent(content, templateData);
-        // Render signature separately (not part of renderEmailContent return type)
         let renderedSignature = null;
         if (content.signature) {
             renderedSignature = Object.entries(templateData).reduce((text, [key, value]) => text.replace(new RegExp(`{{${key}}}`, 'gi'), value || ''), content.signature);
@@ -478,9 +441,6 @@ export const previewEmailTemplateEndpoint = authFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// LIST TEMPLATE CATEGORIES
-// ------------------------------------------------------
 export const listEmailTemplateCategoriesEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Email Template Categories',

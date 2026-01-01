@@ -4,7 +4,6 @@ import { areWorkersRunning } from '../utils/bullmq';
 import prisma from '../utils/prisma';
 import { providerRegistry } from '../providers/registry';
 import { register, metrics } from '../utils/metrics.js';
-// Health check endpoint
 export const healthEndpoint = publicFactory.build({
     method: 'get',
     shortDescription: 'Health Check',
@@ -20,7 +19,6 @@ export const healthEndpoint = publicFactory.build({
         }),
     }),
     handler: async () => {
-        // Check database connectivity
         let databaseStatus = 'error';
         try {
             await prisma.$runCommandRaw({ ping: 1 });
@@ -29,10 +27,8 @@ export const healthEndpoint = publicFactory.build({
         catch {
             databaseStatus = 'error';
         }
-        // Check BullMQ workers
         const workers = areWorkersRunning();
         const bullmqStatus = workers.campaign && workers.customer ? 'ok' : 'degraded';
-        // Check message providers
         let messageProvidersStatus = 'ok';
         const providers = providerRegistry.list();
         if (providers.length === 0) {
@@ -49,7 +45,6 @@ export const healthEndpoint = publicFactory.build({
                 messageProvidersStatus = 'degraded';
             }
         }
-        // Determine overall status
         let status = 'ok';
         if (databaseStatus === 'error') {
             status = 'error';
@@ -70,7 +65,6 @@ export const healthEndpoint = publicFactory.build({
         };
     },
 });
-// Metrics endpoint (returns Prometheus format)
 export const metricsEndpoint = publicFactory.build({
     method: 'get',
     shortDescription: 'Prometheus Metrics',
@@ -81,7 +75,6 @@ export const metricsEndpoint = publicFactory.build({
         metrics: z.string(),
     }),
     handler: async () => {
-        // Update provider health metrics
         const providers = providerRegistry.list();
         for (const provider of providers) {
             const healthy = await provider.healthCheck();
@@ -89,7 +82,6 @@ export const metricsEndpoint = publicFactory.build({
                 .labels({ provider: provider.name, channel: provider.channel })
                 .set(healthy ? 1 : 0);
         }
-        // Return metrics in Prometheus format
         const metricsText = await register.metrics();
         return { metrics: metricsText };
     },

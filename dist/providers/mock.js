@@ -1,15 +1,10 @@
 import crypto from 'crypto';
-/**
- * Mock email provider for local development and testing.
- * Logs messages to console and stores them in memory.
- */
 export class MockEmailProvider {
     name = 'mock_email';
     channel = 'email';
     webhookSecret;
     shouldFail;
     failureRate;
-    // In-memory storage for testing
     static sentMessages = [];
     constructor(config) {
         this.webhookSecret = config.webhookSecret || 'mock-webhook-secret';
@@ -17,7 +12,6 @@ export class MockEmailProvider {
         this.failureRate = config.failureRate || 0;
     }
     async send(message) {
-        // Simulate failure based on configuration
         if (this.shouldFail || Math.random() < this.failureRate) {
             return {
                 success: false,
@@ -26,13 +20,11 @@ export class MockEmailProvider {
             };
         }
         const providerMessageId = `mock_${crypto.randomUUID()}`;
-        // Store message for testing
         MockEmailProvider.sentMessages.push({
             id: providerMessageId,
             message,
             sentAt: new Date(),
         });
-        // Log for visibility during development
         console.log(`[MockEmailProvider] Message sent:`, {
             id: providerMessageId,
             to: message.to,
@@ -59,11 +51,6 @@ export class MockEmailProvider {
         const data = payload;
         if (!data)
             return null;
-        // Support multiple common webhook payload formats:
-        // 1. Standard format: { messageId, event, timestamp?, metadata? }
-        // 2. SendGrid-like: { sg_message_id, event, timestamp }
-        // 3. Mailgun-like: { "Message-Id", event, timestamp }
-        // 4. Generic: { id, type/status/event, timestamp }
         const messageId = data.messageId ||
             data.sg_message_id ||
             data['Message-Id'] ||
@@ -78,7 +65,6 @@ export class MockEmailProvider {
             return null;
         }
         const eventTypeMap = {
-            // Standard events
             delivered: 'delivered',
             bounced: 'bounced',
             opened: 'opened',
@@ -86,19 +72,16 @@ export class MockEmailProvider {
             unsubscribed: 'unsubscribed',
             complained: 'complained',
             failed: 'failed',
-            // SendGrid-style
             processed: 'delivered',
             dropped: 'bounced',
             bounce: 'bounced',
             open: 'opened',
             click: 'clicked',
             spamreport: 'complained',
-            // Mailgun-style
             accepted: 'delivered',
             rejected: 'failed',
             permanent_fail: 'bounced',
             temporary_fail: 'failed',
-            // Generic aliases
             sent: 'delivered',
             success: 'delivered',
             error: 'failed',
@@ -118,22 +101,13 @@ export class MockEmailProvider {
     async healthCheck() {
         return true;
     }
-    /**
-     * Clear all stored messages (for testing).
-     */
     static clearMessages() {
         MockEmailProvider.sentMessages = [];
     }
-    /**
-     * Get all stored messages (for testing).
-     */
     static getMessages() {
         return MockEmailProvider.sentMessages;
     }
 }
-/**
- * Mock SMS provider for local development and testing.
- */
 export class MockSmsProvider {
     name = 'mock_sms';
     channel = 'sms';
@@ -182,10 +156,6 @@ export class MockSmsProvider {
         const data = payload;
         if (!data)
             return null;
-        // Support multiple common SMS webhook payload formats:
-        // 1. Standard: { messageId, status }
-        // 2. Twilio-like: { MessageSid, MessageStatus }
-        // 3. Generic: { id, status/event }
         const messageId = data.messageId ||
             data.MessageSid ||
             data.message_sid ||
@@ -200,11 +170,9 @@ export class MockSmsProvider {
             return null;
         }
         const statusMap = {
-            // Standard statuses
             delivered: 'delivered',
             failed: 'failed',
             undelivered: 'bounced',
-            // Twilio-style
             sent: 'delivered',
             queued: 'delivered',
             accepted: 'delivered',
@@ -227,9 +195,6 @@ export class MockSmsProvider {
         return MockSmsProvider.sentMessages;
     }
 }
-/**
- * Mock WhatsApp provider for local development and testing.
- */
 export class MockWhatsAppProvider {
     name = 'mock_whatsapp';
     channel = 'whatsapp';
@@ -306,9 +271,6 @@ export class MockWhatsAppProvider {
         return MockWhatsAppProvider.sentMessages;
     }
 }
-/**
- * Mock RCS provider for local development and testing.
- */
 export class MockRcsProvider {
     name = 'mock_rcs';
     channel = 'rcs';
@@ -385,9 +347,6 @@ export class MockRcsProvider {
         return MockRcsProvider.sentMessages;
     }
 }
-/**
- * Mock Push provider for local development and testing.
- */
 export class MockPushProvider {
     name = 'mock_push';
     channel = 'push';

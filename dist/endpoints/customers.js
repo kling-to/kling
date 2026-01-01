@@ -209,7 +209,6 @@ export const upsertCustomerEndpoint = managerFactory.build({
                     ...(metadata && { metadata: JSON.parse(JSON.stringify(metadata)) }),
                 },
             });
-            // Audit log for customer update
             const auditContext = extractAuditContext(ctx.request, ctx.user);
             const changedFields = [];
             if (email && email !== existingCustomer.email)
@@ -385,7 +384,6 @@ export const ingestCustomerEventEndpoint = publicFactory.build({
                 },
             });
         }
-        // Check for experiment conversions based on event type
         const conversionGoal = mapEventToConversion(eventType);
         if (conversionGoal) {
             const conversionValue = eventType === 'order_placed' && eventData ? eventData.total || 0 : undefined;
@@ -394,7 +392,6 @@ export const ingestCustomerEventEndpoint = publicFactory.build({
                 console.log(`[EventIngest] Recorded conversion for customer ${customer.id}: ${conversionResult.experiments.length} experiment(s)`);
             }
         }
-        // Trigger flow matching asynchronously (don't await - let it run in background)
         enrollInMatchingFlows(customer.id, eventType, eventData || {}, event.id).catch((err) => {
             console.error('[EventIngest] Flow matching failed:', err);
         });

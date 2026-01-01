@@ -14,22 +14,12 @@ import { calculateCampaignRevenue, getCampaignAttributionBreakdown, } from '../u
 import { generateDiscountCode, generateGiftCode, formatDiscountValue, formatGiftValue, } from '../utils/promotions';
 import createHttpError from 'http-errors';
 import { renderEmailContent, renderSmsContent, validateContentLimits, } from '../utils/template-renderer';
-/**
- * Generate a unique idempotency key for campaigns
- */
 function generateIdempotencyKey() {
     return `campaign-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
 }
-/**
- * Generate a unique placeholder key for "once" campaigns
- * (MongoDB unique indexes don't support sparse mode properly with Prisma)
- */
 function generateOnceJobKey() {
     return `once-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
 }
-/**
- * Format campaign discount data with computed formattedValue
- */
 function formatCampaignDiscount(discount) {
     if (!discount)
         return null;
@@ -45,9 +35,6 @@ function formatCampaignDiscount(discount) {
         stackable: discount.stackable,
     };
 }
-/**
- * Format campaign gift data with computed formattedValue
- */
 function formatCampaignGift(gift) {
     if (!gift)
         return null;
@@ -62,16 +49,12 @@ function formatCampaignGift(gift) {
         maxQuantityPerCustomer: gift.maxQuantityPerCustomer,
     };
 }
-/**
- * Check if a query DSL contains an aggregation query
- */
 function isAggregationQuery(dsl) {
     return (typeof dsl === 'object' &&
         dsl !== null &&
         'aggregation' in dsl &&
         typeof dsl.aggregation === 'object');
 }
-// Embedded discount schema for campaigns
 const campaignDiscountSchema = z.object({
     type: z.enum(['percentage', 'fixed_amount', 'free_shipping']),
     value: z.number(),
@@ -82,7 +65,6 @@ const campaignDiscountSchema = z.object({
     minOrderValue: z.number().nullable(),
     stackable: z.boolean().nullable(),
 });
-// Embedded gift schema for campaigns
 const campaignGiftSchema = z.object({
     type: z.enum(['free_sku', 'free_sample', 'redemption_code']),
     sku: z.string().nullable(),
@@ -92,14 +74,12 @@ const campaignGiftSchema = z.object({
     maxQuantityTotal: z.number().nullable(),
     maxQuantityPerCustomer: z.number().nullable(),
 });
-// Email content schema (inline message content for email campaigns)
 const emailContentSchema = z.object({
     subject: z.string(),
     preheader: z.string().nullable().optional(),
     body: z.string(),
     html: z.string().nullable().optional(),
     signature: z.string().nullable().optional(),
-    // Product recommendations
     includeRecommendations: z.boolean().nullable().optional(),
     recommendationAlgorithm: z
         .enum([
@@ -115,18 +95,15 @@ const emailContentSchema = z.object({
     recommendationLimit: z.number().min(1).max(12).nullable().optional(),
     excludePurchasedProducts: z.boolean().nullable().optional(),
 });
-// SMS content schema (inline message content for SMS campaigns)
 const smsContentSchema = z.object({
     body: z.string(),
 });
-// WhatsApp content schema
 const whatsappContentSchema = z.object({
     body: z.string(),
     mediaUrl: z.string().nullable().optional(),
-    mediaType: z.string().nullable().optional(), // "image" | "video" | "document" | "audio"
+    mediaType: z.string().nullable().optional(),
     templateId: z.string().nullable().optional(),
 });
-// RCS content schema
 const rcsContentSchema = z.object({
     body: z.string(),
     title: z.string().nullable().optional(),
@@ -134,15 +111,13 @@ const rcsContentSchema = z.object({
     suggestions: z.array(z.string()).optional(),
     fallbackToSms: z.boolean().optional(),
 });
-// Push content schema
 const pushContentSchema = z.object({
     title: z.string(),
     body: z.string(),
     imageUrl: z.string().nullable().optional(),
     deepLink: z.string().nullable().optional(),
-    data: z.unknown().nullable().optional(), // JsonValue from Prisma
+    data: z.unknown().nullable().optional(),
 });
-// Common schemas
 const campaignSchema = z.object({
     id: z.string(),
     createdBy: z.string(),
@@ -167,14 +142,12 @@ const campaignSchema = z.object({
     executedOnce: z.boolean(),
     discount: campaignDiscountSchema.nullable(),
     gift: campaignGiftSchema.nullable(),
-    // Send time optimization
     enableSendTimeOptimization: z.boolean(),
     defaultSendHour: z.number().nullable(),
     maxOptimizationWindow: z.number(),
     createdAt: z.date(),
     updatedAt: z.date(),
 });
-// Schedule info from BullMQ
 const scheduleInfoSchema = z
     .object({
     jobKey: z.string(),
@@ -185,33 +158,29 @@ const scheduleInfoSchema = z
     nextRun: z.date().nullable(),
 })
     .nullable();
-// Input schema for discount configuration
 const discountInputSchema = z.object({
     type: z.enum(['percentage', 'fixed_amount', 'free_shipping']),
     value: z.number(),
-    code: z.string().optional(), // Auto-generated if not provided
+    code: z.string().optional(),
     maxUsesTotal: z.number().optional(),
     maxUsesPerCustomer: z.number().optional(),
     minOrderValue: z.number().optional(),
     stackable: z.boolean().optional(),
 });
-// Input schema for gift configuration
 const giftInputSchema = z.object({
     type: z.enum(['free_sku', 'free_sample', 'redemption_code']),
     sku: z.string().optional(),
     value: z.string().optional(),
-    code: z.string().optional(), // Auto-generated if not provided
+    code: z.string().optional(),
     maxQuantityTotal: z.number().optional(),
     maxQuantityPerCustomer: z.number().optional(),
 });
-// Input schema for email content
 const emailContentInputSchema = z.object({
     subject: z.string().min(1, 'Subject is required'),
     preheader: z.string().optional(),
     body: z.string().min(1, 'Body is required'),
     html: z.string().optional(),
     signature: z.string().optional(),
-    // Product recommendations
     includeRecommendations: z.boolean().optional(),
     recommendationAlgorithm: z
         .enum([
@@ -226,7 +195,6 @@ const emailContentInputSchema = z.object({
     recommendationLimit: z.number().min(1).max(12).optional(),
     excludePurchasedProducts: z.boolean().optional(),
 });
-// Input schema for SMS content
 const smsContentInputSchema = z.object({
     body: z.string().min(1, 'Body is required'),
 });
@@ -239,9 +207,9 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         name: z.string(),
         description: z.string().optional(),
         executionType: z.enum(['recurring', 'once']).default('recurring'),
-        cron: z.string().optional(), // Required for recurring, optional for once
-        startAt: z.string().datetime().optional(), // Optional for once campaigns
-        endAt: z.string().datetime().optional(), // Optional for once campaigns
+        cron: z.string().optional(),
+        startAt: z.string().datetime().optional(),
+        endAt: z.string().datetime().optional(),
         query: z.union([z.string(), z.record(z.string(), z.unknown())]),
         email: emailContentInputSchema.optional(),
         sms: smsContentInputSchema.optional(),
@@ -250,7 +218,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         retrieval: z.record(z.string(), z.unknown()).optional(),
         discount: discountInputSchema.optional(),
         gift: giftInputSchema.optional(),
-        // Send time optimization
         enableSendTimeOptimization: z.boolean().optional().default(false),
         defaultSendHour: z.number().min(0).max(23).optional(),
         maxOptimizationWindow: z.number().min(1).max(48).optional().default(24),
@@ -263,7 +230,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
     handler: async ({ input, ctx }) => {
         const userId = ctx.user.sub;
         const isRecurring = input.executionType === 'recurring';
-        // Validate schedule fields for recurring campaigns
         if (isRecurring) {
             if (!input.cron) {
                 throw createHttpError(400, 'Cron schedule is required for recurring campaigns');
@@ -274,7 +240,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         }
         const startAt = input.startAt ? new Date(input.startAt) : null;
         const endAt = input.endAt ? new Date(input.endAt) : null;
-        // Validate message content based on channel
         if (input.channel === 'email') {
             if (!input.email) {
                 throw createHttpError(400, 'Email content is required for email campaigns');
@@ -287,7 +252,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         }
         const settings = await prisma.settings.findFirst();
         const timezone = settings?.timezone || 'UTC';
-        // Process discount - auto-generate code if not provided
         let discountData = null;
         if (input.discount) {
             discountData = {
@@ -300,7 +264,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                 stackable: input.discount.stackable ?? false,
             };
         }
-        // Process gift - auto-generate code if not provided
         let giftData = null;
         if (input.gift) {
             giftData = {
@@ -325,7 +288,6 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                         body: input.email.body,
                         html: input.email.html || null,
                         signature: input.email.signature || null,
-                        // Product recommendations
                         includeRecommendations: input.email.includeRecommendations || null,
                         recommendationAlgorithm: input.email.recommendationAlgorithm || null,
                         recommendationLimit: input.email.recommendationLimit || null,
@@ -347,13 +309,11 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                 endAt,
                 timezone,
                 idempotencyKey: generateIdempotencyKey(),
-                // Send time optimization
                 enableSendTimeOptimization: input.enableSendTimeOptimization ?? false,
                 defaultSendHour: input.defaultSendHour ?? null,
                 maxOptimizationWindow: input.maxOptimizationWindow ?? 24,
             },
         });
-        // Only create schedule for recurring campaigns
         let scheduleInfo = null;
         if (isRecurring && input.cron && startAt && endAt) {
             try {
@@ -367,12 +327,10 @@ export const createCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         const updatedCampaign = await prisma.campaignDefinition.update({
             where: { id: campaign.id },
             data: {
-                // Only update bullmqJobKey if we have a new one from scheduling
                 ...(scheduleInfo ? { bullmqJobKey: scheduleInfo.jobKey } : {}),
                 status: 'active',
             },
         });
-        // Audit log campaign creation
         await createAuditLog({
             action: AuditActions.campaign.created,
             resourceType: 'campaign',
@@ -523,7 +481,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         status: z.enum(['active', 'paused', 'disabled']).optional(),
         discount: discountInputSchema.nullable().optional(),
         gift: giftInputSchema.nullable().optional(),
-        // Send time optimization
         enableSendTimeOptimization: z.boolean().optional(),
         defaultSendHour: z.number().min(0).max(23).nullable().optional(),
         maxOptimizationWindow: z.number().min(1).max(48).optional(),
@@ -542,32 +499,26 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         const scheduleChanged = input.cron !== undefined || input.startAt !== undefined || input.endAt !== undefined;
         const executionType = input.executionType || existingCampaign.executionType;
         const isRecurring = executionType === 'recurring';
-        // Validate message content if channel is being changed
         if (input.channel && input.channel !== existingCampaign.channel) {
-            // If changing to email channel, must have email content
             if (input.channel === 'email' && !input.email && !existingCampaign.email) {
                 throw createHttpError(400, 'Email content is required when switching to email channel');
             }
-            // If changing to SMS channel, must have SMS content
             if (input.channel === 'sms' && !input.sms && !existingCampaign.sms) {
                 throw createHttpError(400, 'SMS content is required when switching to SMS channel');
             }
         }
-        // Process discount update - undefined means no change, null means remove
         let discountData = undefined;
         if (input.discount !== undefined) {
             discountData = input.discount
                 ? processDiscountInput(input.discount, existingCampaign.discount)
                 : null;
         }
-        // Process gift update - undefined means no change, null means remove
         let giftData = undefined;
         if (input.gift !== undefined) {
             giftData = input.gift
                 ? processGiftInput(input.gift, existingCampaign.gift)
                 : null;
         }
-        // Process email content update - undefined means no change, null means remove
         let emailData = undefined;
         if (input.email !== undefined) {
             emailData = input.email
@@ -577,7 +528,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                     body: input.email.body,
                     html: input.email.html || null,
                     signature: input.email.signature || null,
-                    // Product recommendations
                     includeRecommendations: input.email.includeRecommendations || null,
                     recommendationAlgorithm: input.email.recommendationAlgorithm || null,
                     recommendationLimit: input.email.recommendationLimit || null,
@@ -585,7 +535,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                 }
                 : null;
         }
-        // Process SMS content update - undefined means no change, null means remove
         let smsData = undefined;
         if (input.sms !== undefined) {
             smsData = input.sms ? { body: input.sms.body } : null;
@@ -614,7 +563,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                 ...(input.status && { status: input.status }),
                 ...(discountData !== undefined && { discount: discountData }),
                 ...(giftData !== undefined && { gift: giftData }),
-                // Send time optimization
                 ...(input.enableSendTimeOptimization !== undefined && {
                     enableSendTimeOptimization: input.enableSendTimeOptimization,
                 }),
@@ -649,7 +597,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         else if (updatedCampaign.bullmqJobKey) {
             schedule = await getScheduleInfoByKey(updatedCampaign.bullmqJobKey);
         }
-        // Audit log campaign update
         const changedFields = [];
         if (input.name)
             changedFields.push('name');
@@ -695,7 +642,6 @@ export const updateCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         };
     },
 });
-// Helper function to process discount input, preserving existing code if not changed
 function processDiscountInput(input, existing) {
     return {
         type: input.type,
@@ -707,7 +653,6 @@ function processDiscountInput(input, existing) {
         stackable: input.stackable ?? false,
     };
 }
-// Helper function to process gift input, preserving existing code if not changed
 function processGiftInput(input, existing) {
     return {
         type: input.type,
@@ -753,7 +698,6 @@ export const deleteCampaignEndpoint = createAuthRoleFactory('admin').build({
                 bullmqJobKey: null,
             },
         });
-        // Audit log campaign archive
         await createAuditLog({
             action: AuditActions.campaign.archived,
             resourceType: 'campaign',
@@ -803,7 +747,6 @@ export const pauseCampaignEndpoint = createAuthRoleFactory('admin', 'manager').b
             where: { id: input.campaignId },
             data: { status: 'paused' },
         });
-        // Audit log campaign pause
         await createAuditLog({
             action: AuditActions.campaign.paused,
             resourceType: 'campaign',
@@ -846,13 +789,11 @@ export const resumeCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
         if (campaign.status !== 'paused') {
             throw createHttpError(400, `Cannot resume campaign with status: ${campaign.status}`);
         }
-        // For "once" campaigns, just set status to active (no schedule needed)
         if (campaign.executionType === 'once') {
             await prisma.campaignDefinition.update({
                 where: { id: input.campaignId },
                 data: { status: 'active' },
             });
-            // Audit log campaign resume
             await createAuditLog({
                 action: AuditActions.campaign.resumed,
                 resourceType: 'campaign',
@@ -865,7 +806,6 @@ export const resumeCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
             });
             return { success: true, status: 'active', schedule: null };
         }
-        // For recurring campaigns, schedule is required
         if (!campaign.cron || !campaign.startAt || !campaign.endAt) {
             throw createHttpError(400, 'Campaign is missing schedule information');
         }
@@ -886,7 +826,6 @@ export const resumeCampaignEndpoint = createAuthRoleFactory('admin', 'manager').
                 bullmqJobKey: scheduleInfo.jobKey,
             },
         });
-        // Audit log campaign resume
         await createAuditLog({
             action: AuditActions.campaign.resumed,
             resourceType: 'campaign',
@@ -1004,9 +943,6 @@ export const testCampaignEndpoint = createAuthRoleFactory('admin', 'manager').bu
         };
     },
 });
-/**
- * Generate AI subject line suggestions for a campaign
- */
 export const generateSubjectLinesEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'post',
     shortDescription: 'Generate Subject Lines',
@@ -1033,15 +969,12 @@ export const generateSubjectLinesEndpoint = createAuthRoleFactory('admin', 'mana
         if (campaign.channel !== 'email') {
             throw createHttpError(400, 'Subject line generation is only available for email campaigns');
         }
-        // Get email content
         const email = campaign.email;
         if (!email || !email.body) {
             throw createHttpError(400, 'Campaign must have email content to generate subject lines');
         }
-        // Get discount and gift info if present
         const discount = campaign.discount;
         const gift = campaign.gift;
-        // Generate suggestions
         const result = await generateSubjectLines(campaign.name, campaign.description, email.body, discount, gift);
         if (!result.success || !result.suggestions) {
             return {
@@ -1101,7 +1034,6 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
         const endAt = new Date(dsl.endAt);
         const executionType = dsl.executionType || 'recurring';
         const isRecurring = executionType === 'recurring';
-        // Convert the messageTemplate from DSL to channel-specific content
         const channel = parseChannel(dsl.channel);
         const emailContent = channel === 'email'
             ? {
@@ -1110,7 +1042,6 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 body: dsl.messageTemplate,
                 html: null,
                 signature: null,
-                // Product recommendations from DSL
                 includeRecommendations: dsl.includeRecommendations || null,
                 recommendationAlgorithm: dsl.recommendationAlgorithm || null,
                 recommendationLimit: dsl.recommendationLimit || null,
@@ -1122,7 +1053,6 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 body: dsl.messageTemplate,
             }
             : null;
-        // Process discount from DSL
         let discountData = null;
         if (dsl.discount) {
             discountData = {
@@ -1135,7 +1065,6 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 stackable: false,
             };
         }
-        // Process gift from DSL
         let giftData = null;
         if (dsl.gift) {
             giftData = {
@@ -1147,8 +1076,6 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 maxQuantityPerCustomer: 1,
             };
         }
-        // Campaign is created paused - no BullMQ schedule created yet
-        // Schedule will be created when user resumes the campaign
         const campaign = await prisma.campaignDefinition.create({
             data: {
                 createdBy: userId,
@@ -1162,7 +1089,7 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 originalPrompt: input.prompt,
                 parsedDsl: JSON.parse(JSON.stringify(dsl)),
                 status: 'paused',
-                bullmqJobKey: isRecurring ? null : generateOnceJobKey(), // No schedule for paused recurring campaigns
+                bullmqJobKey: isRecurring ? null : generateOnceJobKey(),
                 cron: dsl.cron,
                 startAt,
                 endAt,
@@ -1186,7 +1113,7 @@ export const createCampaignFromNLEndpoint = createAuthRoleFactory('admin', 'mana
                 discount: formatCampaignDiscount(campaign.discount),
                 gift: formatCampaignGift(campaign.gift),
             },
-            schedule: null, // No schedule created - campaign is paused
+            schedule: null,
             parsedDsl: dsl,
             originalPrompt: input.prompt,
         };
@@ -1237,9 +1164,6 @@ export const parseCampaignNLEndpoint = createAuthRoleFactory('admin', 'manager',
         };
     },
 });
-/**
- * Campaign Statistics endpoint - comprehensive analytics data
- */
 export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Get Campaign Statistics',
@@ -1253,7 +1177,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         campaignId: objectIdSchema,
         campaignName: z.string(),
         channel: z.string(),
-        // Aggregate metrics
         metrics: z.object({
             totalSent: z.number(),
             totalDelivered: z.number(),
@@ -1270,7 +1193,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             complaintRate: z.number(),
             clickToOpenRate: z.number(),
         }),
-        // Revenue attribution
         revenue: z.object({
             totalRevenue: z.number(),
             totalOrders: z.number(),
@@ -1278,7 +1200,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             attributionWindow: z.string(),
             attributionModel: z.string(),
         }),
-        // Time-series data for charts
         timeSeries: z.object({
             period: z.string(),
             startDate: z.string(),
@@ -1293,14 +1214,12 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
                 failed: z.number(),
             })),
         }),
-        // Hourly distribution for best send time analysis
         hourlyDistribution: z.array(z.object({
             hour: z.number(),
             sent: z.number(),
             openRate: z.number(),
             clickRate: z.number(),
         })),
-        // Recent activity
         recentActivity: z.array(z.object({
             id: z.string(),
             customerId: z.string(),
@@ -1312,7 +1231,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             openedAt: z.date().nullable(),
             clickedAt: z.date().nullable(),
         })),
-        // Execution history for recurring campaigns
         executions: z.array(z.object({
             id: z.string(),
             startedAt: z.date(),
@@ -1329,7 +1247,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         if (!campaign) {
             throw createHttpError(404, 'Campaign not found');
         }
-        // Calculate date range based on period
         const periodDays = {
             '7d': 7,
             '14d': 14,
@@ -1339,7 +1256,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         const endDate = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - periodDays);
-        // Get all message logs for this campaign within period
         const messageLogs = await prisma.messageLog.findMany({
             where: {
                 campaignId: input.campaignId,
@@ -1352,7 +1268,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             },
             orderBy: { createdAt: 'desc' },
         });
-        // Calculate aggregate metrics
         const totalSent = messageLogs.length;
         const totalDelivered = messageLogs.filter((m) => m.deliveryStatus === 'delivered' ||
             m.deliveryStatus === 'opened' ||
@@ -1369,9 +1284,7 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         const bounceRate = totalSent > 0 ? totalBounced / totalSent : 0;
         const complaintRate = totalDelivered > 0 ? totalComplained / totalDelivered : 0;
         const clickToOpenRate = totalOpened > 0 ? totalClicked / totalOpened : 0;
-        // Build time-series data (daily aggregation)
         const timeSeriesMap = new Map();
-        // Initialize all days in the period
         for (let i = 0; i < periodDays; i++) {
             const date = new Date(startDate);
             date.setDate(date.getDate() + i);
@@ -1385,7 +1298,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
                 failed: 0,
             });
         }
-        // Populate time-series data from message logs
         for (const log of messageLogs) {
             const dateKey = log.createdAt.toISOString().split('T')[0];
             const dayData = timeSeriesMap.get(dateKey);
@@ -1413,7 +1325,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         const timeSeriesData = Array.from(timeSeriesMap.entries())
             .map(([date, data]) => ({ date, ...data }))
             .sort((a, b) => a.date.localeCompare(b.date));
-        // Build hourly distribution for optimal send time analysis
         const hourlyMap = new Map();
         for (let h = 0; h < 24; h++) {
             hourlyMap.set(h, { sent: 0, opened: 0, clicked: 0 });
@@ -1437,7 +1348,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             openRate: data.sent > 0 ? data.opened / data.sent : 0,
             clickRate: data.sent > 0 ? data.clicked / data.sent : 0,
         }));
-        // Get recent activity (last 20 messages)
         const recentActivity = messageLogs.slice(0, 20).map((log) => ({
             id: log.id,
             customerId: log.customerId,
@@ -1449,13 +1359,11 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
             openedAt: log.openedAt,
             clickedAt: log.clickedAt,
         }));
-        // Get campaign executions
         const executions = await prisma.campaignExecution.findMany({
             where: { campaignId: input.campaignId },
             orderBy: { startedAt: 'desc' },
             take: 10,
         });
-        // Calculate revenue attribution
         const revenueData = await calculateCampaignRevenue(input.campaignId, undefined, startDate, endDate);
         return {
             campaignId: campaign.id,
@@ -1503,9 +1411,6 @@ export const getCampaignStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         };
     },
 });
-/**
- * Export campaign data as CSV
- */
 export const exportCampaignDataEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Export Campaign Data',
@@ -1564,7 +1469,6 @@ export const exportCampaignDataEndpoint = createAuthRoleFactory('admin', 'manage
                 recordCount: messageLogs.length,
             };
         }
-        // CSV format
         const headers = [
             'Message ID',
             'Customer ID',
@@ -1657,7 +1561,6 @@ export const previewCampaignMessageEndpoint = createAuthRoleFactory('admin', 'ma
         if (!campaign) {
             throw createHttpError(404, 'Campaign not found');
         }
-        // Build sample data with defaults
         const sampleData = {
             name: input.sampleData?.name || 'John Doe',
             email: input.sampleData?.email || 'john.doe@example.com',
@@ -1672,7 +1575,6 @@ export const previewCampaignMessageEndpoint = createAuthRoleFactory('admin', 'ma
         const warnings = [];
         let emailResult = null;
         let smsResult = null;
-        // Render email content if available
         if (campaign.email) {
             const emailContent = campaign.email;
             const rendered = renderEmailContent(emailContent, sampleData);
@@ -1684,7 +1586,6 @@ export const previewCampaignMessageEndpoint = createAuthRoleFactory('admin', 'ma
             };
             warnings.push(...validateContentLimits('email', rendered));
         }
-        // Render SMS content if available
         if (campaign.sms) {
             const smsContent = campaign.sms;
             const rendered = renderSmsContent(smsContent, sampleData);
@@ -1700,13 +1601,6 @@ export const previewCampaignMessageEndpoint = createAuthRoleFactory('admin', 'ma
         };
     },
 });
-/**
- * Preview Query Endpoint
- *
- * Returns real-time customer count for a query DSL without executing the full query.
- * Supports nested AND/OR/NOT logic with aggregations.
- * Rate limited to prevent abuse.
- */
 export const previewQueryEndpoint = createAuthRoleFactory('admin', 'manager', 'staff').build({
     method: 'post',
     shortDescription: 'Preview Query',
@@ -1726,7 +1620,6 @@ export const previewQueryEndpoint = createAuthRoleFactory('admin', 'manager', 's
     }),
     handler: async ({ input }) => {
         const dsl = typeof input.query === 'string' ? parseQueryDSL(input.query) : input.query;
-        // Validate query
         const validation = validateQuery(dsl);
         if (!validation.valid) {
             return {
@@ -1767,13 +1660,7 @@ export const previewQueryEndpoint = createAuthRoleFactory('admin', 'manager', 's
         }
     },
 });
-// ============================================================
-// REVENUE ATTRIBUTION ENDPOINTS
-// ============================================================
 const attributionModelSchema = z.enum(['last_touch', 'first_touch', 'linear']);
-/**
- * Get revenue attributed to a campaign
- */
 export const getCampaignRevenueEndpoint = createAuthRoleFactory('admin', 'manager', 'staff').build({
     method: 'get',
     shortDescription: 'Get Campaign Revenue',
@@ -1808,14 +1695,12 @@ export const getCampaignRevenueEndpoint = createAuthRoleFactory('admin', 'manage
         if (!campaign) {
             throw createHttpError(404, 'Campaign not found');
         }
-        // Count messages sent
         const messagesSent = await prisma.messageLog.count({
             where: {
                 campaignId: input.campaignId,
                 deliveryStatus: { in: ['sent', 'delivered', 'opened', 'clicked'] },
             },
         });
-        // Calculate revenue with optional overrides
         const config = {};
         if (input.attributionWindow)
             config.windowDays = input.attributionWindow;
@@ -1840,9 +1725,6 @@ export const getCampaignRevenueEndpoint = createAuthRoleFactory('admin', 'manage
         };
     },
 });
-/**
- * Get detailed revenue breakdown for a campaign (for CSV export)
- */
 export const getCampaignRevenueBreakdownEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Get Campaign Revenue Breakdown',
@@ -1890,9 +1772,7 @@ export const getCampaignRevenueBreakdownEndpoint = createAuthRoleFactory('admin'
         if (input.attributionModel)
             config.model = input.attributionModel;
         const allBreakdown = await getCampaignAttributionBreakdown(input.campaignId, config);
-        // Apply pagination
         const paginatedBreakdown = allBreakdown.slice(input.offset, input.offset + input.limit);
-        // Get settings for attribution info
         const settings = await prisma.settings.findFirst();
         const windowDays = input.attributionWindow || settings?.attributionWindowDays || 7;
         const model = input.attributionModel || settings?.attributionModel || 'last_touch';

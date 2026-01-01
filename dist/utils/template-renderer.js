@@ -1,13 +1,6 @@
-/**
- * Template Renderer Utility
- *
- * Handles rendering of message content with placeholder substitution.
- * Supports email (with subject, body, html) and SMS.
- */
-// Character limits for validation/warnings
 export const CHANNEL_LIMITS = {
     sms: {
-        body: 160, // Single SMS segment
+        body: 160,
         bodyWarn: 160,
     },
     email: {
@@ -15,10 +8,6 @@ export const CHANNEL_LIMITS = {
         preheader: 100,
     },
 };
-/**
- * Substitute placeholders in a template string.
- * Supports {{placeholder}} syntax with optional whitespace.
- */
 export function substituteplaceholders(template, data) {
     let result = template;
     for (const [key, value] of Object.entries(data)) {
@@ -28,9 +17,6 @@ export function substituteplaceholders(template, data) {
     }
     return result;
 }
-/**
- * Render email content with placeholder substitution
- */
 export function renderEmailContent(email, data) {
     const rendered = {
         subject: substituteplaceholders(email.subject, data),
@@ -42,7 +28,6 @@ export function renderEmailContent(email, data) {
     if (email.html) {
         rendered.html = substituteplaceholders(email.html, data);
     }
-    // Append signature if present
     if (email.signature) {
         const renderedSignature = substituteplaceholders(email.signature, data);
         rendered.body = `${rendered.body}\n\n${renderedSignature}`;
@@ -52,18 +37,11 @@ export function renderEmailContent(email, data) {
     }
     return rendered;
 }
-/**
- * Render SMS content with placeholder substitution
- */
 export function renderSmsContent(sms, data) {
     return {
         body: substituteplaceholders(sms.body, data),
     };
 }
-/**
- * Validate content against channel limits.
- * Returns warnings for content that exceeds recommended limits.
- */
 export function validateContentLimits(channel, content) {
     const warnings = [];
     switch (channel) {
@@ -88,16 +66,11 @@ export function validateContentLimits(channel, content) {
     }
     return warnings;
 }
-/**
- * Render a product recommendations HTML block for email templates.
- * Generates a responsive table-based layout compatible with email clients.
- */
 export function renderRecommendationsBlock(recommendations, config = {}) {
     const { columns = 3, showPrice = true, showReason = false, buttonText = 'Shop Now', currency = '$', } = config;
     if (recommendations.length === 0) {
         return '';
     }
-    // Generate table rows with products in columns
     const rows = [];
     for (let i = 0; i < recommendations.length; i += columns) {
         const rowItems = recommendations.slice(i, i + columns);
@@ -126,7 +99,6 @@ export function renderRecommendationsBlock(recommendations, config = {}) {
       `;
         })
             .join('');
-        // Pad with empty cells if row is not full
         const emptyCells = columns - rowItems.length;
         const padding = emptyCells > 0
             ? Array(emptyCells)
@@ -143,13 +115,8 @@ export function renderRecommendationsBlock(recommendations, config = {}) {
     </table>
   `.trim();
 }
-/**
- * Add individual recommendation placeholders to template data.
- * Supports rec1_name, rec1_url, rec1_price, rec1_image, rec1_brand, rec1_category (up to 6 products)
- */
 export function addRecommendationPlaceholders(data, recommendations, config = {}) {
     const { currency = '$' } = config;
-    // Add individual product placeholders (rec1, rec2, ... rec6)
     for (let i = 0; i < Math.min(recommendations.length, 6); i++) {
         const rec = recommendations[i];
         const prefix = `rec${i + 1}`;
@@ -162,15 +129,10 @@ export function addRecommendationPlaceholders(data, recommendations, config = {}
         data[`${prefix}_sku`] = rec.sku;
         data[`${prefix}_reason`] = rec.reason;
     }
-    // Add the full HTML block as {{recommendations}}
     data.recommendations = renderRecommendationsBlock(recommendations, config);
-    // Add count for conditional logic
     data.recommendation_count = recommendations.length.toString();
     return data;
 }
-/**
- * Create template data from customer and promo info
- */
 export function buildTemplateData(customer, promo, product, recommendations) {
     const data = {
         name: customer.name || 'Customer',
@@ -197,7 +159,6 @@ export function buildTemplateData(customer, promo, product, recommendations) {
             }
         }
     }
-    // Add product data for browse abandonment flows
     if (product) {
         if (product.productId)
             data.productId = product.productId;
@@ -219,15 +180,11 @@ export function buildTemplateData(customer, promo, product, recommendations) {
         if (product.sku)
             data.sku = product.sku;
     }
-    // Add product recommendations ({{recommendations}} block + {{rec1_name}}, etc.)
     if (recommendations && recommendations.items.length > 0) {
         addRecommendationPlaceholders(data, recommendations.items, recommendations.config);
     }
     return data;
 }
-/**
- * Legacy: Render a simple inline template (backwards compatibility)
- */
 export function renderInlineTemplate(template, data) {
     return substituteplaceholders(template, data);
 }

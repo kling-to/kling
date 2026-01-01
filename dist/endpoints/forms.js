@@ -1,9 +1,3 @@
-/**
- * Form Endpoints
- *
- * CRUD operations for signup forms (popups, embedded, banners).
- * Uses @coltorapps/builder schema format for form definitions.
- */
 import { z } from 'zod';
 import { createAuthRoleFactory, publicFactory } from '../factories';
 import prisma from '../utils/prisma';
@@ -12,9 +6,7 @@ import { objectIdSchema } from '../utils/validation';
 import { createAuditLog, extractAuditContext } from '../utils/audit';
 import svgCaptcha from 'svg-captcha';
 import { getFlowEnrollmentQueue } from '../utils/bullmq/queues';
-// Simple in-memory captcha session store (production should use Redis)
 const captchaStore = new Map();
-// Cleanup expired captchas periodically
 setInterval(() => {
     const now = Date.now();
     for (const [key, value] of captchaStore.entries()) {
@@ -22,31 +14,24 @@ setInterval(() => {
             captchaStore.delete(key);
         }
     }
-}, 60000); // Clean up every minute
+}, 60000);
 const managerFactory = createAuthRoleFactory('admin', 'manager');
 const staffFactory = createAuthRoleFactory('admin', 'manager', 'staff');
 const adminFactory = createAuthRoleFactory('admin');
-// ------------------------------------------------------
-// SCHEMA DEFINITIONS
-// ------------------------------------------------------
-// @coltorapps/builder entity schema
 const formEntitySchema = z.object({
     type: z.string(),
     attributes: z.record(z.string(), z.unknown()),
     parentId: z.string().optional(),
 });
-// @coltorapps/builder schema format
 const formBuilderSchema = z.object({
     entities: z.record(z.string(), formEntitySchema),
     root: z.array(z.string()),
 });
-// Trigger rules for form display
 const triggerRulesSchema = z.object({
     type: z.enum(['time_delay', 'scroll_depth', 'exit_intent', 'immediate', 'click']),
-    value: z.number().optional(), // seconds for time_delay, percentage for scroll_depth
-    selector: z.string().optional(), // CSS selector for click trigger
+    value: z.number().optional(),
+    selector: z.string().optional(),
 });
-// Styling options
 const formStylingSchema = z.object({
     primaryColor: z.string().optional(),
     backgroundColor: z.string().optional(),
@@ -75,7 +60,6 @@ const formOutputSchema = z.object({
     displayFrequency: z.string(),
     successMessage: z.string().nullable(),
     successRedirect: z.string().nullable(),
-    // Flow trigger automation
     triggerFlowOnSubmit: z.boolean(),
     flowToTriggerId: z.string().nullable(),
     flowToTrigger: z
@@ -108,9 +92,6 @@ const formSubmissionOutputSchema = z.object({
     metadata: z.unknown().nullable(),
     submittedAt: z.string(),
 });
-// ------------------------------------------------------
-// HELPER FUNCTIONS
-// ------------------------------------------------------
 function formatFormOutput(form) {
     return {
         ...form,
@@ -124,14 +105,10 @@ function formatSubmissionOutput(submission) {
         submittedAt: submission.submittedAt.toISOString(),
     };
 }
-// Default empty form schema
 const DEFAULT_FORM_SCHEMA = {
     entities: {},
     root: [],
 };
-// ------------------------------------------------------
-// LIST FORMS
-// ------------------------------------------------------
 export const listFormsEndpoint = staffFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -178,9 +155,6 @@ export const listFormsEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// GET FORM
-// ------------------------------------------------------
 export const getFormEndpoint = staffFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -213,9 +187,6 @@ export const getFormEndpoint = staffFactory.build({
         return { form: formatFormOutput(form) };
     },
 });
-// ------------------------------------------------------
-// CREATE FORM
-// ------------------------------------------------------
 export const createFormEndpoint = managerFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -234,7 +205,6 @@ export const createFormEndpoint = managerFactory.build({
         displayFrequency: z.enum(['once_per_session', 'once_per_day', 'always']).optional(),
         successMessage: z.string().optional(),
         successRedirect: z.string().url().optional(),
-        // Flow trigger automation
         triggerFlowOnSubmit: z.boolean().optional(),
         flowToTriggerId: objectIdSchema.optional(),
     }),
@@ -264,7 +234,6 @@ export const createFormEndpoint = managerFactory.build({
                 displayFrequency: input.displayFrequency || 'once_per_session',
                 successMessage: input.successMessage,
                 successRedirect: input.successRedirect,
-                // Flow trigger automation
                 triggerFlowOnSubmit: input.triggerFlowOnSubmit || false,
                 flowToTriggerId: input.flowToTriggerId,
             },
@@ -274,7 +243,6 @@ export const createFormEndpoint = managerFactory.build({
                 },
             },
         });
-        // Create audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'form_created',
@@ -289,9 +257,6 @@ export const createFormEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// UPDATE FORM
-// ------------------------------------------------------
 export const updateFormEndpoint = managerFactory.build({
     tag: 'Forms',
     method: 'patch',
@@ -311,7 +276,6 @@ export const updateFormEndpoint = managerFactory.build({
         displayFrequency: z.enum(['once_per_session', 'once_per_day', 'always']).optional(),
         successMessage: z.string().nullable().optional(),
         successRedirect: z.string().url().nullable().optional(),
-        // Flow trigger automation
         triggerFlowOnSubmit: z.boolean().optional(),
         flowToTriggerId: objectIdSchema.nullable().optional(),
     }),
@@ -327,7 +291,6 @@ export const updateFormEndpoint = managerFactory.build({
         if (!existing) {
             throw createHttpError(404, 'Form not found');
         }
-        // Build clean data object with proper JSON serialization
         const cleanData = {};
         if (updateData.name !== undefined)
             cleanData.name = updateData.name;
@@ -360,7 +323,6 @@ export const updateFormEndpoint = managerFactory.build({
             cleanData.successMessage = updateData.successMessage;
         if (updateData.successRedirect !== undefined)
             cleanData.successRedirect = updateData.successRedirect;
-        // Flow trigger automation
         if (updateData.triggerFlowOnSubmit !== undefined)
             cleanData.triggerFlowOnSubmit = updateData.triggerFlowOnSubmit;
         if (updateData.flowToTriggerId !== undefined) {
@@ -377,7 +339,6 @@ export const updateFormEndpoint = managerFactory.build({
                 },
             },
         });
-        // Create audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'form_updated',
@@ -392,9 +353,6 @@ export const updateFormEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// DELETE (ARCHIVE) FORM
-// ------------------------------------------------------
 export const deleteFormEndpoint = adminFactory.build({
     tag: 'Forms',
     method: 'delete',
@@ -413,12 +371,10 @@ export const deleteFormEndpoint = adminFactory.build({
         if (!existing) {
             throw createHttpError(404, 'Form not found');
         }
-        // Archive instead of delete
         await prisma.form.update({
             where: { id: input.formId },
             data: { status: 'archived' },
         });
-        // Create audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: 'form_archived',
@@ -430,9 +386,6 @@ export const deleteFormEndpoint = adminFactory.build({
         return { message: 'Form archived successfully' };
     },
 });
-// ------------------------------------------------------
-// PAUSE FORM
-// ------------------------------------------------------
 export const pauseFormEndpoint = managerFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -478,9 +431,6 @@ export const pauseFormEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// RESUME (ACTIVATE) FORM
-// ------------------------------------------------------
 export const resumeFormEndpoint = managerFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -503,7 +453,6 @@ export const resumeFormEndpoint = managerFactory.build({
         if (existing.status === 'archived') {
             throw createHttpError(400, 'Archived forms cannot be activated');
         }
-        // Validate form has at least one field before activating
         const schema = existing.schema;
         if (!schema?.root?.length) {
             throw createHttpError(400, 'Form must have at least one field before activating');
@@ -531,9 +480,6 @@ export const resumeFormEndpoint = managerFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// LIST FORM SUBMISSIONS
-// ------------------------------------------------------
 export const listFormSubmissionsEndpoint = staffFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -552,7 +498,6 @@ export const listFormSubmissionsEndpoint = staffFactory.build({
     }),
     handler: async ({ input }) => {
         const { formId, limit, offset } = input;
-        // Verify form exists
         const form = await prisma.form.findUnique({
             where: { id: formId },
         });
@@ -576,9 +521,6 @@ export const listFormSubmissionsEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// FORM ANALYTICS
-// ------------------------------------------------------
 export const getFormAnalyticsEndpoint = staffFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -618,13 +560,11 @@ export const getFormAnalyticsEndpoint = staffFactory.build({
             },
             orderBy: { submittedAt: 'asc' },
         });
-        // Group by day
         const submissionsByDay = {};
         for (const sub of submissions) {
             const dateKey = sub.submittedAt.toISOString().split('T')[0];
             submissionsByDay[dateKey] = (submissionsByDay[dateKey] || 0) + 1;
         }
-        // Calculate field fill rates
         const schema = form.schema;
         const fieldFillCounts = {};
         for (const [fieldId, entity] of Object.entries(schema.entities || {})) {
@@ -660,9 +600,6 @@ export const getFormAnalyticsEndpoint = staffFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PUBLIC: GET FORM CONFIG (For Widget)
-// ------------------------------------------------------
 export const getPublicFormConfigEndpoint = publicFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -730,9 +667,6 @@ export const getPublicFormConfigEndpoint = publicFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PUBLIC: SUBMIT FORM
-// ------------------------------------------------------
 export const submitFormEndpoint = publicFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -766,10 +700,8 @@ export const submitFormEndpoint = publicFactory.build({
         if (form.status !== 'active') {
             throw createHttpError(400, 'Form is not accepting submissions');
         }
-        // Extract email from submission data to find/create customer
         let customerId = null;
         const schema = form.schema;
-        // Check if form has a captcha field and validate it
         const hasCaptcha = Object.values(schema.entities || {}).some((entity) => entity.type === 'captchaField');
         if (hasCaptcha) {
             if (!input.captchaSessionId || !input.captchaAnswer) {
@@ -787,20 +719,16 @@ export const submitFormEndpoint = publicFactory.build({
             if (!isValid) {
                 throw createHttpError(400, 'Incorrect captcha answer. Please try again.');
             }
-            // Remove used captcha
             captchaStore.delete(input.captchaSessionId);
         }
-        // Find email field in submitted data
         for (const [fieldId, entity] of Object.entries(schema.entities || {})) {
             const ent = entity;
             if (ent.type === 'emailField' && input.data[fieldId]) {
                 const email = String(input.data[fieldId]).toLowerCase().trim();
-                // Find or create customer
                 let customer = await prisma.customer.findUnique({
                     where: { email },
                 });
                 if (!customer) {
-                    // Try to extract name from other fields
                     let name;
                     for (const [fId, e] of Object.entries(schema.entities || {})) {
                         const ent2 = e;
@@ -822,7 +750,6 @@ export const submitFormEndpoint = publicFactory.build({
                 break;
             }
         }
-        // Create submission
         const submission = await prisma.formSubmission.create({
             data: {
                 formId: input.formId,
@@ -831,7 +758,6 @@ export const submitFormEndpoint = publicFactory.build({
                 metadata: input.metadata ? JSON.parse(JSON.stringify(input.metadata)) : null,
             },
         });
-        // Audit log for submission (public endpoint, no user context)
         await createAuditLog({
             action: 'form_submission_received',
             resourceType: 'form',
@@ -846,7 +772,6 @@ export const submitFormEndpoint = publicFactory.build({
                 userAgent: input.metadata?.userAgent,
             },
         });
-        // Trigger flow enrollment if configured
         if (form.triggerFlowOnSubmit && form.flowToTriggerId && customerId) {
             try {
                 const flowEnrollmentQueue = getFlowEnrollmentQueue();
@@ -865,7 +790,6 @@ export const submitFormEndpoint = publicFactory.build({
                 });
             }
             catch (err) {
-                // Log but don't fail the submission
                 console.error('[FormSubmit] Failed to enqueue flow enrollment:', err);
             }
         }
@@ -876,9 +800,6 @@ export const submitFormEndpoint = publicFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PUBLIC: GENERATE CAPTCHA
-// ------------------------------------------------------
 export const generateCaptchaEndpoint = publicFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -894,7 +815,6 @@ export const generateCaptchaEndpoint = publicFactory.build({
         expiresIn: z.number(),
     }),
     handler: async ({ input }) => {
-        // Verify form exists and has captcha field
         const form = await prisma.form.findUnique({
             where: { id: input.formId },
             select: { id: true, status: true, schema: true },
@@ -905,13 +825,11 @@ export const generateCaptchaEndpoint = publicFactory.build({
         if (form.status !== 'active') {
             throw createHttpError(400, 'Form is not active');
         }
-        // Check if form has a captcha field
         const schema = form.schema;
         const hasCaptcha = Object.values(schema.entities || {}).some((entity) => entity.type === 'captchaField');
         if (!hasCaptcha) {
             throw createHttpError(400, 'This form does not have a captcha field');
         }
-        // Generate captcha based on type
         let captcha;
         if (input.type === 'math') {
             captcha = svgCaptcha.createMathExpr({
@@ -936,12 +854,11 @@ export const generateCaptchaEndpoint = publicFactory.build({
                 charPreset: 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789',
             });
         }
-        // Generate session ID and store captcha
         const sessionId = crypto.randomUUID();
-        const expiresIn = 300; // 5 minutes
+        const expiresIn = 300;
         const expiresAt = Date.now() + expiresIn * 1000;
         captchaStore.set(sessionId, {
-            text: captcha.text.toLowerCase(), // Store lowercase for case-insensitive matching
+            text: captcha.text.toLowerCase(),
             expiresAt,
         });
         return {
@@ -951,9 +868,6 @@ export const generateCaptchaEndpoint = publicFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// PUBLIC: VALIDATE CAPTCHA
-// ------------------------------------------------------
 export const validateCaptchaEndpoint = publicFactory.build({
     tag: 'Forms',
     method: 'post',
@@ -984,7 +898,6 @@ export const validateCaptchaEndpoint = publicFactory.build({
         }
         const isValid = session.text === input.answer.toLowerCase().trim();
         if (isValid) {
-            // Remove used captcha
             captchaStore.delete(input.sessionId);
         }
         return {
@@ -993,9 +906,6 @@ export const validateCaptchaEndpoint = publicFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// EXPORT FORM SUBMISSIONS
-// ------------------------------------------------------
 export const exportFormSubmissionsEndpoint = managerFactory.build({
     tag: 'Forms',
     method: 'get',
@@ -1029,7 +939,6 @@ export const exportFormSubmissionsEndpoint = managerFactory.build({
         });
         const timestamp = new Date().toISOString().split('T')[0];
         const safeName = form.name.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
-        // Get all unique field IDs from the form schema
         const schema = form.schema;
         const fieldIds = Object.keys(schema?.entities || {});
         const fieldLabels = {};
@@ -1060,7 +969,6 @@ export const exportFormSubmissionsEndpoint = managerFactory.build({
                 recordCount: submissions.length,
             };
         }
-        // CSV format
         const baseHeaders = [
             'Submission ID',
             'Submitted At',
@@ -1071,7 +979,6 @@ export const exportFormSubmissionsEndpoint = managerFactory.build({
             'Page URL',
             'Referrer',
         ];
-        // Add field headers
         const fieldHeaders = fieldIds.map((id) => fieldLabels[id] || id);
         const headers = [...baseHeaders, ...fieldHeaders];
         const rows = submissions.map((sub) => {
@@ -1087,7 +994,6 @@ export const exportFormSubmissionsEndpoint = managerFactory.build({
                 String(metadata?.pageUrl || ''),
                 String(metadata?.referrer || ''),
             ];
-            // Add field values
             const fieldValues = fieldIds.map((id) => {
                 const value = data[id];
                 if (value === null || value === undefined)
@@ -1100,7 +1006,6 @@ export const exportFormSubmissionsEndpoint = managerFactory.build({
             });
             return [...baseRow, ...fieldValues];
         });
-        // Escape CSV values
         const escapeCSV = (value) => {
             if (value.includes(',') || value.includes('"') || value.includes('\n')) {
                 return `"${value.replace(/"/g, '""')}"`;

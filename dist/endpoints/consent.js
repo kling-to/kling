@@ -6,10 +6,6 @@ import { createAuditLog, extractAuditContext, AuditActions } from '../utils/audi
 import { exportCustomerData, deleteCustomerData, } from '../utils/gdpr';
 import { objectIdSchema } from '../utils/validation';
 import Papa from 'papaparse';
-/**
- * Record consent for a customer (Journey 9).
- * Used by external systems or frontend to record consent changes.
- */
 export const recordConsentEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Record Consent',
@@ -30,7 +26,6 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
     }),
     handler: async ({ input, ctx }) => {
         const { consentType, granted, source } = input;
-        // Find customer
         let customer = null;
         if (input.customerId) {
             customer = await prisma.customer.findUnique({
@@ -50,9 +45,7 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
         if (!customer) {
             throw createHttpError(404, 'Customer not found');
         }
-        // Get IP from request context
         const ipAddress = ctx.request?.ip || null;
-        // Create consent log
         const consent = await prisma.consentLog.create({
             data: {
                 customerId: customer.id,
@@ -62,15 +55,12 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
                 ipAddress,
             },
         });
-        // Update customer opt-out based on consent
-        // If consent is withdrawn for marketing channels, update opt-out status
         if (!granted && ['email_marketing', 'sms_marketing'].includes(consentType)) {
             const channelMap = {
                 email_marketing: 'email',
                 sms_marketing: 'sms',
             };
             const channel = channelMap[consentType];
-            // Add to opt-out channels if not already there
             const currentOptOutChannels = customer.optOutChannels || [];
             if (!currentOptOutChannels.includes(channel)) {
                 await prisma.customer.update({
@@ -81,7 +71,6 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
                 });
             }
         }
-        // If consent is granted, remove from opt-out channels
         if (granted && ['email_marketing', 'sms_marketing'].includes(consentType)) {
             const channelMap = {
                 email_marketing: 'email',
@@ -98,7 +87,6 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
                 },
             });
         }
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, {});
         await createAuditLog({
             action: granted ? AuditActions.consent.granted : AuditActions.consent.revoked,
@@ -119,9 +107,6 @@ export const recordConsentEndpoint = publicWithRequestFactory.build({
         };
     },
 });
-/**
- * Get consent history for a customer.
- */
 export const getConsentHistoryEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Consent History',
@@ -147,14 +132,12 @@ export const getConsentHistoryEndpoint = authFactory.build({
         })),
     }),
     handler: async ({ input }) => {
-        // Get customer
         const customer = await prisma.customer.findUnique({
             where: { id: input.customerId },
         });
         if (!customer) {
             throw createHttpError(404, 'Customer not found');
         }
-        // Get consent history
         const history = await prisma.consentLog.findMany({
             where: { customerId: input.customerId },
             orderBy: { createdAt: 'desc' },
@@ -184,9 +167,6 @@ export const getConsentHistoryEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Add entry to suppression list.
- */
 const addSuppressionFactory = createAuthRoleFactory('admin', 'manager');
 export const addSuppressionEndpoint = addSuppressionFactory.build({
     method: 'post',
@@ -229,9 +209,6 @@ export const addSuppressionEndpoint = addSuppressionFactory.build({
         };
     },
 });
-/**
- * Remove entry from suppression list.
- */
 const removeSuppressionFactory = createAuthRoleFactory('admin', 'manager');
 export const removeSuppressionEndpoint = removeSuppressionFactory.build({
     method: 'post',
@@ -257,9 +234,6 @@ export const removeSuppressionEndpoint = removeSuppressionFactory.build({
         return { success: true };
     },
 });
-/**
- * List suppression entries.
- */
 export const listSuppressionsEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Suppressions',
@@ -326,9 +300,6 @@ export const listSuppressionsEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Request data export for a customer (GDPR/CCPA Article 15 - Right of Access).
- */
 const requestDataExportFactory = createAuthRoleFactory('admin', 'manager');
 export const requestDataExportEndpoint = requestDataExportFactory.build({
     method: 'post',
@@ -355,17 +326,14 @@ export const requestDataExportEndpoint = requestDataExportFactory.build({
         format: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Get customer
         const customer = await prisma.customer.findUnique({
             where: { id: input.customerId },
         });
         if (!customer) {
             throw createHttpError(404, 'Customer not found');
         }
-        // Generate export
         const exportOptions = input.options || {};
         const exportData = await exportCustomerData(input.customerId, exportOptions);
-        // Audit log the export request
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: AuditActions.data.exportRequested,
@@ -387,9 +355,6 @@ export const requestDataExportEndpoint = requestDataExportFactory.build({
         };
     },
 });
-/**
- * Request data deletion for a customer (GDPR Article 17 - Right to Erasure).
- */
 const requestDataDeletionFactory = createAuthRoleFactory('admin');
 export const requestDataDeletionEndpoint = requestDataDeletionFactory.build({
     method: 'post',
@@ -425,14 +390,12 @@ export const requestDataDeletionEndpoint = requestDataDeletionFactory.build({
         message: z.string(),
     }),
     handler: async ({ input, ctx }) => {
-        // Get customer
         const customer = await prisma.customer.findUnique({
             where: { id: input.customerId },
         });
         if (!customer) {
             throw createHttpError(404, 'Customer not found');
         }
-        // Count related records for preview
         const [ordersCount, eventsCount, messagesCount, consentsCount, experimentsCount, discountUsagesCount, giftGrantsCount,] = await Promise.all([
             prisma.order.count({ where: { customerId: input.customerId } }),
             prisma.customerEvent.count({ where: { customerId: input.customerId } }),
@@ -462,13 +425,11 @@ export const requestDataDeletionEndpoint = requestDataDeletionFactory.build({
                 message: `Dry run completed. No data was ${input.mode === 'delete' ? 'deleted' : 'anonymized'}. Set dryRun=false to perform actual ${input.mode}.`,
             };
         }
-        // Build deletion options
         const deletionOptions = {
             mode: input.mode,
             retainOrders: input.options?.retainOrders ?? true,
             retainMessageLogs: input.options?.retainMessageLogs ?? true,
         };
-        // Perform actual deletion/anonymization
         const result = await deleteCustomerData(input.customerId, ctx.user.sub, deletionOptions);
         return {
             success: true,
@@ -482,29 +443,13 @@ export const requestDataDeletionEndpoint = requestDataDeletionFactory.build({
         };
     },
 });
-// ------------------------------------------------------
-// SUPPRESSION LIST IMPORT
-// ------------------------------------------------------
-/**
- * Valid suppression reasons (Klaviyo-compatible)
- */
 const VALID_REASONS = ['unsubscribed', 'bounced', 'spam', 'manual', 'other'];
-/**
- * Email validation regex
- */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/**
- * E.164 phone validation regex (international format)
- */
 const PHONE_REGEX = /^\+[1-9]\d{1,14}$/;
-/**
- * Validate and normalize a single row from the CSV
- */
 function validateRow(row, rowIndex) {
     const errors = [];
     let channel = null;
     let value = null;
-    // Determine channel from email or phone
     const email = row.email?.trim().toLowerCase();
     const phone = row.phone?.trim();
     if (email && EMAIL_REGEX.test(email)) {
@@ -512,7 +457,6 @@ function validateRow(row, rowIndex) {
         value = email;
     }
     else if (phone) {
-        // Normalize phone: add + if missing, remove spaces/dashes
         let normalizedPhone = phone.replace(/[\s\-()]/g, '');
         if (!normalizedPhone.startsWith('+')) {
             normalizedPhone = '+' + normalizedPhone;
@@ -545,7 +489,6 @@ function validateRow(row, rowIndex) {
             message: 'Either email or phone must be provided',
         });
     }
-    // Validate reason (default to 'manual' if not provided)
     let reason = 'manual';
     if (row.reason) {
         const normalizedReason = row.reason.trim().toLowerCase();
@@ -553,7 +496,6 @@ function validateRow(row, rowIndex) {
             reason = normalizedReason;
         }
         else {
-            // Map common variations
             const reasonMap = {
                 unsubscribe: 'unsubscribed',
                 unsub: 'unsubscribed',
@@ -568,7 +510,6 @@ function validateRow(row, rowIndex) {
             reason = reasonMap[normalizedReason] || 'other';
         }
     }
-    // Validate date (optional)
     let suppressedAt = null;
     if (row.date) {
         const dateStr = row.date.trim();
@@ -594,11 +535,6 @@ function validateRow(row, rowIndex) {
         data: { channel, value, reason, suppressedAt },
     };
 }
-/**
- * Import suppressions from CSV file content.
- * Accepts base64-encoded CSV content.
- * Supports Klaviyo export format: email, reason, date (or phone, reason, date)
- */
 const importSuppressionsFactory = createAuthRoleFactory('admin', 'manager');
 export const importSuppressionsEndpoint = importSuppressionsFactory.build({
     method: 'post',
@@ -626,7 +562,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
         })),
     }),
     handler: async ({ input, ctx }) => {
-        // Decode base64 content
         let csvContent;
         try {
             csvContent = Buffer.from(input.content, 'base64').toString('utf-8');
@@ -634,7 +569,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
         catch {
             throw createHttpError(400, 'Invalid base64-encoded content');
         }
-        // Parse CSV
         const parseResult = Papa.parse(csvContent, {
             header: true,
             skipEmptyLines: true,
@@ -652,10 +586,9 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
         };
         const allErrors = [];
         const validEntries = [];
-        // Validate all rows
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const result = validateRow(row, i + 2); // +2 for header row and 1-based indexing
+            const result = validateRow(row, i + 2);
             if (result.valid && result.data) {
                 validEntries.push(result.data);
             }
@@ -664,9 +597,7 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                 allErrors.push(...result.errors);
             }
         }
-        // Limit validation errors returned (first 100)
         const limitedErrors = allErrors.slice(0, 100);
-        // Create import history record first
         const importHistory = await prisma.suppressionImportHistory.create({
             data: {
                 importedBy: ctx.user.sub,
@@ -679,7 +610,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                 validationErrors: limitedErrors.length > 0 ? JSON.parse(JSON.stringify(limitedErrors)) : undefined,
             },
         });
-        // Process valid entries using upsert
         for (const entry of validEntries) {
             try {
                 const existingEntry = await prisma.suppressionEntry.findUnique({
@@ -691,11 +621,9 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                     },
                 });
                 if (existingEntry) {
-                    // Already exists, skip
                     stats.rowsSkipped++;
                 }
                 else {
-                    // Create new entry
                     await prisma.suppressionEntry.create({
                         data: {
                             channel: entry.channel,
@@ -710,7 +638,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                 }
             }
             catch (err) {
-                // Handle race condition where entry was created between check and insert
                 if (err instanceof Error && err.message.includes('Unique constraint')) {
                     stats.rowsSkipped++;
                 }
@@ -719,7 +646,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                 }
             }
         }
-        // Update import history with final stats
         await prisma.suppressionImportHistory.update({
             where: { id: importHistory.id },
             data: {
@@ -728,7 +654,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
                 rowsInvalid: stats.rowsInvalid,
             },
         });
-        // Audit log
         const auditContext = extractAuditContext(ctx.request, ctx.user);
         await createAuditLog({
             action: AuditActions.suppression.import,
@@ -749,9 +674,6 @@ export const importSuppressionsEndpoint = importSuppressionsFactory.build({
         };
     },
 });
-/**
- * List suppression import history.
- */
 export const listImportHistoryEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Import History',
@@ -800,7 +722,6 @@ export const listImportHistoryEndpoint = authFactory.build({
         const hasMore = imports.length > pageSize;
         if (hasMore)
             imports.pop();
-        // Get user info for each import
         const userIds = [...new Set(imports.map((i) => i.importedBy))];
         const users = await prisma.user.findMany({
             where: { id: { in: userIds } },
@@ -831,9 +752,6 @@ export const listImportHistoryEndpoint = authFactory.build({
         };
     },
 });
-/**
- * Get import details including validation errors.
- */
 export const getImportDetailsEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Import Details',

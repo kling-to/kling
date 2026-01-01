@@ -1,16 +1,7 @@
-/**
- * Unified Query Executor
- *
- * Handles nested AND/OR/NOT queries that combine regular filters with aggregation queries.
- * This is the main entry point for executing complex campaign queries.
- */
 import prisma from './prisma';
 import { parseQueryDSL, executeQuery as executeBasicQuery, } from './query-executor';
 import { executeAggregationQuery } from './query-aggregator';
 import { validateQueryComplexity, countConditions, } from './query-complexity';
-/**
- * Check if a DSL contains any aggregation queries (at any nesting level).
- */
 export function containsAggregation(dsl) {
     if (dsl.aggregation) {
         return true;
@@ -32,7 +23,6 @@ export function containsAggregation(dsl) {
     }
     return false;
 }
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function extractAggregations(dsl, path = []) {
     const result = [];
     if (dsl.aggregation) {
@@ -53,9 +43,6 @@ function extractAggregations(dsl, path = []) {
     }
     return result;
 }
-/**
- * Execute an aggregation query and return matching customer IDs.
- */
 async function executeAggregationForIds(aggregation, options) {
     const aggDsl = {
         aggregation: {
@@ -65,7 +52,6 @@ async function executeAggregationForIds(aggregation, options) {
             value: aggregation.value,
         },
     };
-    // Fetch all matching customer IDs (paginate through all results)
     const allIds = new Set();
     let page = 1;
     const pageSize = 1000;
@@ -81,22 +67,17 @@ async function executeAggregationForIds(aggregation, options) {
         }
         hasMore = result.hasMore;
         page++;
-        // Safety limit to prevent infinite loops
         if (page > 100)
             break;
     }
     return allIds;
 }
-/**
- * Apply boolean logic to sets of customer IDs.
- */
 function combineIdSets(sets, logic) {
     if (sets.length === 0)
         return new Set();
     if (sets.length === 1)
         return sets[0];
     if (logic === 'and') {
-        // Intersection: customer must be in ALL sets
         let result = new Set(sets[0]);
         for (let i = 1; i < sets.length; i++) {
             result = new Set([...result].filter((id) => sets[i].has(id)));
@@ -104,7 +85,6 @@ function combineIdSets(sets, logic) {
         return result;
     }
     else {
-        // Union: customer must be in ANY set
         const result = new Set();
         for (const set of sets) {
             for (const id of set) {
@@ -114,12 +94,8 @@ function combineIdSets(sets, logic) {
         return result;
     }
 }
-/**
- * Build a DSL that excludes aggregation conditions (for Prisma execution).
- */
 function stripAggregations(dsl) {
     const result = {};
-    // Copy non-aggregation properties
     if (dsl.filters)
         result.filters = dsl.filters;
     if (dsl.orderBy)
@@ -134,7 +110,6 @@ function stripAggregations(dsl) {
         result.birthdayThisMonth = dsl.birthdayThisMonth;
     if (dsl.orders)
         result.orders = dsl.orders;
-    // Copy shorthand fields
     const reservedKeys = new Set([
         'filters',
         'and',
@@ -153,7 +128,6 @@ function stripAggregations(dsl) {
             result[key] = value;
         }
     }
-    // Recursively strip from AND conditions
     if (dsl.and && Array.isArray(dsl.and)) {
         const strippedAnd = dsl.and
             .map((sub) => stripAggregations(sub))
@@ -162,7 +136,6 @@ function stripAggregations(dsl) {
             result.and = strippedAnd;
         }
     }
-    // Recursively strip from OR conditions
     if (dsl.or && Array.isArray(dsl.or)) {
         const strippedOr = dsl.or
             .map((sub) => stripAggregations(sub))
@@ -171,7 +144,6 @@ function stripAggregations(dsl) {
             result.or = strippedOr;
         }
     }
-    // Recursively strip from NOT condition
     if (dsl.not) {
         const strippedNot = stripAggregations(dsl.not);
         if (Object.keys(strippedNot).length > 0 ||
@@ -183,15 +155,8 @@ function stripAggregations(dsl) {
     }
     return result;
 }
-/**
- * Execute a nested query with aggregations using a multi-pass approach:
- * 1. Extract and execute all aggregation queries to get customer IDs
- * 2. Apply boolean logic to combine aggregation results
- * 3. Execute remaining Prisma-compatible filters with ID constraints
- */
 async function executeNestedWithAggregations(dsl, options) {
     const startTime = Date.now();
-    // Step 1: Recursively resolve the query tree to get customer IDs
     const matchingIds = await resolveQueryToIds(dsl, options);
     if (matchingIds.size === 0) {
         return {
@@ -202,7 +167,6 @@ async function executeNestedWithAggregations(dsl, options) {
             conditionCount: countConditions(dsl),
         };
     }
-    // Step 2: If countOnly, just return the count
     if (options.countOnly) {
         return {
             customers: [],
@@ -212,7 +176,6 @@ async function executeNestedWithAggregations(dsl, options) {
             conditionCount: countConditions(dsl),
         };
     }
-    // Step 3: Fetch customer details for matching IDs
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 100;
     const skip = (page - 1) * pageSize;
@@ -252,23 +215,17 @@ async function executeNestedWithAggregations(dsl, options) {
         conditionCount: countConditions(dsl),
     };
 }
-/**
- * Recursively resolve a query DSL to a set of matching customer IDs.
- */
 async function resolveQueryToIds(dsl, options) {
     const results = [];
-    // Handle aggregation condition
     if (dsl.aggregation) {
         const aggIds = await executeAggregationForIds(dsl.aggregation, options);
         results.push(aggIds);
     }
-    // Handle regular filters (non-aggregation conditions)
     const strippedDsl = stripAggregations({
         filters: dsl.filters,
         orders: dsl.orders,
         birthdayThisWeek: dsl.birthdayThisWeek,
         birthdayThisMonth: dsl.birthdayThisMonth,
-        // Copy shorthand fields
         ...Object.fromEntries(Object.entries(dsl).filter(([key]) => ![
             'filters',
             'and',
@@ -301,7 +258,6 @@ async function resolveQueryToIds(dsl, options) {
             'birthdayThisMonth',
         ].includes(key));
     if (hasFilters) {
-        // Execute basic query for IDs only
         const filterResult = await executeBasicQuery(strippedDsl, {
             excludeOptedOut: options.excludeOptedOut ?? true,
             maxResults: 100000,
@@ -310,7 +266,6 @@ async function resolveQueryToIds(dsl, options) {
         const filterIds = new Set(filterResult.customers.map((c) => c.id));
         results.push(filterIds);
     }
-    // Handle AND conditions - all must match (intersection)
     if (dsl.and && Array.isArray(dsl.and) && dsl.and.length > 0) {
         const andSets = [];
         for (const subDsl of dsl.and) {
@@ -320,7 +275,6 @@ async function resolveQueryToIds(dsl, options) {
         const andResult = combineIdSets(andSets, 'and');
         results.push(andResult);
     }
-    // Handle OR conditions - any must match (union)
     if (dsl.or && Array.isArray(dsl.or) && dsl.or.length > 0) {
         const orSets = [];
         for (const subDsl of dsl.or) {
@@ -330,15 +284,12 @@ async function resolveQueryToIds(dsl, options) {
         const orResult = combineIdSets(orSets, 'or');
         results.push(orResult);
     }
-    // Handle NOT condition - exclude matching IDs
     let excludeIds = null;
     if (dsl.not) {
         excludeIds = await resolveQueryToIds(dsl.not, options);
     }
-    // Combine all results with AND logic (all conditions at this level must match)
     let finalIds;
     if (results.length === 0) {
-        // No conditions at this level - get all customers
         const allCustomers = await prisma.customer.findMany({
             where: options.excludeOptedOut !== false ? { optOut: false } : undefined,
             select: { id: true },
@@ -348,29 +299,21 @@ async function resolveQueryToIds(dsl, options) {
     else {
         finalIds = combineIdSets(results, 'and');
     }
-    // Apply NOT exclusion
     if (excludeIds && excludeIds.size > 0) {
         finalIds = new Set([...finalIds].filter((id) => !excludeIds.has(id)));
     }
     return finalIds;
 }
-/**
- * Execute a unified query that supports nested AND/OR/NOT with aggregations.
- * This is the main entry point for executing campaign queries.
- */
 export async function executeUnifiedQuery(dslInput, options = {}) {
     const startTime = Date.now();
     const dsl = typeof dslInput === 'string' ? parseQueryDSL(dslInput) : dslInput;
-    // Validate complexity
     const validation = validateQueryComplexity(dsl);
     if (!validation.valid) {
         throw new Error(validation.errors.join('; '));
     }
-    // Check if query contains aggregations
     if (containsAggregation(dsl)) {
         return executeNestedWithAggregations(dsl, options);
     }
-    // No aggregations - use the basic query executor
     const result = await executeBasicQuery(dsl, {
         excludeOptedOut: options.excludeOptedOut ?? true,
         maxResults: options.maxResults ?? 10000,
@@ -383,20 +326,14 @@ export async function executeUnifiedQuery(dslInput, options = {}) {
         conditionCount: countConditions(dsl),
     };
 }
-/**
- * Execute a count-only query for preview purposes.
- * Optimized for speed - doesn't fetch full customer data.
- */
 export async function executeCountOnlyQuery(dslInput, options = {}) {
     const startTime = Date.now();
     const dsl = typeof dslInput === 'string' ? parseQueryDSL(dslInput) : dslInput;
-    // Validate complexity
     const validation = validateQueryComplexity(dsl);
     if (!validation.valid) {
         throw new Error(validation.errors.join('; '));
     }
     const conditionCount = countConditions(dsl);
-    // Check if query contains aggregations
     if (containsAggregation(dsl)) {
         const result = await executeNestedWithAggregations(dsl, { ...options, countOnly: true });
         return {
@@ -405,8 +342,6 @@ export async function executeCountOnlyQuery(dslInput, options = {}) {
             conditionCount,
         };
     }
-    // No aggregations - use optimized count query
-    // Build the where clause manually for count
     const result = await executeBasicQuery(dsl, {
         excludeOptedOut: options.excludeOptedOut ?? true,
         maxResults: 1,
@@ -418,9 +353,6 @@ export async function executeCountOnlyQuery(dslInput, options = {}) {
         conditionCount,
     };
 }
-/**
- * Validate a query without executing it.
- */
 export function validateQuery(dslInput) {
     const dsl = typeof dslInput === 'string' ? parseQueryDSL(dslInput) : dslInput;
     return validateQueryComplexity(dsl);

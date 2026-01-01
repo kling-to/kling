@@ -7,7 +7,6 @@ import { AuditAction } from '@prisma/client';
 import { getCampaignPerformance, evaluateCampaign, autoTuneCampaign, autoTuneActiveCampaigns, DEFAULT_AUTO_TUNE_CONFIG, } from '../utils/auto-tune';
 import { checkQuotaFresh } from '../utils/quotas';
 import { objectIdSchema } from '../utils/validation';
-// System health endpoint (owner/admin only)
 export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'System Health',
@@ -69,7 +68,6 @@ export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
             workers: { campaign: false, customer: false },
         };
         let providerStatus = { status: 'ok', providers: [] };
-        // Check database
         const dbStart = Date.now();
         try {
             await prisma.$runCommandRaw({ ping: 1 });
@@ -82,7 +80,6 @@ export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
                 error: err instanceof Error ? err.message : 'Database connection failed',
             };
         }
-        // Check BullMQ
         try {
             const workers = areWorkersRunning();
             const metrics = await getQueueMetrics();
@@ -99,7 +96,6 @@ export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
                 error: err instanceof Error ? err.message : 'BullMQ connection failed',
             };
         }
-        // Check message providers
         const providers = providerRegistry.list();
         const providerHealthChecks = await Promise.all(providers.map(async (provider) => {
             const healthy = await provider.healthCheck();
@@ -119,7 +115,6 @@ export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
             providerStatusValue = 'degraded';
         }
         providerStatus = { status: providerStatusValue, providers: providerHealthChecks };
-        // Determine overall status
         let overallStatus = 'healthy';
         if (dbStatus.status === 'error') {
             overallStatus = 'unhealthy';
@@ -141,7 +136,6 @@ export const systemHealthEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// Audit list endpoint
 export const auditListEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Audit Logs',
@@ -189,9 +183,7 @@ export const auditListEndpoint = authFactory.build({
     handler: async ({ input }) => {
         const { page, pageSize, action, resourceType, resourceId, userId, startDate, endDate } = input;
         const skip = (page - 1) * pageSize;
-        // Build where clause using Prisma types
         const where = {};
-        // Cast action to AuditAction enum if provided
         if (action && Object.values(AuditAction).includes(action)) {
             where.action = action;
         }
@@ -253,7 +245,6 @@ export const auditListEndpoint = authFactory.build({
         };
     },
 });
-// Quota usage endpoint
 export const quotaUsageEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Quota Usage',
@@ -275,7 +266,6 @@ export const quotaUsageEndpoint = authFactory.build({
         }),
     }),
     handler: async () => {
-        // Get fresh quota status (no cache)
         const quotaStatus = await checkQuotaFresh();
         return {
             limits: {
@@ -293,7 +283,6 @@ export const quotaUsageEndpoint = authFactory.build({
         };
     },
 });
-// Auto-tune config schema for validation
 const autoTuneConfigSchema = z.object({
     enabled: z.boolean().optional(),
     minExecutions: z.number().min(1).optional(),
@@ -310,7 +299,6 @@ const autoTuneConfigSchema = z.object({
         .optional(),
     evaluationWindowDays: z.number().min(1).optional(),
 });
-// Get campaign performance metrics
 export const campaignPerformanceEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Campaign Performance',
@@ -372,7 +360,6 @@ export const campaignPerformanceEndpoint = authFactory.build({
         };
     },
 });
-// Evaluate campaign for auto-tune without pausing
 export const evaluateCampaignAutoTuneEndpoint = authFactory.build({
     method: 'post',
     shortDescription: 'Evaluate Auto-tune',
@@ -426,7 +413,6 @@ export const evaluateCampaignAutoTuneEndpoint = authFactory.build({
         };
     },
 });
-// Run auto-tune for a single campaign (will pause if needed)
 export const runAutoTuneCampaignEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Run Auto-tune',
@@ -465,7 +451,6 @@ export const runAutoTuneCampaignEndpoint = createAuthRoleFactory('admin').build(
         };
     },
 });
-// Run auto-tune for all campaigns
 export const runAutoTuneAllEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Run All Auto-tune',
@@ -505,7 +490,6 @@ export const runAutoTuneAllEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// Trigger system-wide auto-tune via BullMQ worker
 export const triggerAutoTuneEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Trigger Auto-tune',
@@ -541,7 +525,6 @@ export const triggerAutoTuneEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// Get auto-tune status
 export const autoTuneStatusEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Auto-tune Status',
@@ -572,13 +555,7 @@ export const autoTuneStatusEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-// ============================================================
-// SEND TIME OPTIMIZATION ENDPOINTS
-// ============================================================
 import { calculateCustomerSendTime, calculateAllSendTimes, calculateBatchSendTimes, getSendTimeDistribution, } from '../utils/send-time-calculator';
-/**
- * Calculate send time profiles for customers
- */
 export const calculateSendTimeProfilesEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Calculate Send Time Profiles',
@@ -602,9 +579,6 @@ export const calculateSendTimeProfilesEndpoint = createAuthRoleFactory('admin').
         return await calculateBatchSendTimes(input.customerIds);
     },
 });
-/**
- * Get send time profile for a specific customer
- */
 export const getSendTimeProfileEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Get Send Time Profile',
@@ -637,11 +611,9 @@ export const getSendTimeProfileEndpoint = createAuthRoleFactory('admin', 'manage
             .optional(),
     }),
     handler: async ({ input }) => {
-        // Get stored profile
         const storedProfile = await prisma.customerSendTimeProfile.findUnique({
             where: { customerId: input.customerId },
         });
-        // Also calculate fresh profile for comparison
         const freshResult = await calculateCustomerSendTime(input.customerId);
         return {
             profile: storedProfile
@@ -676,9 +648,6 @@ export const getSendTimeProfileEndpoint = createAuthRoleFactory('admin', 'manage
         };
     },
 });
-/**
- * Get send time optimization statistics
- */
 export const getSendTimeStatsEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Get Send Time Stats',
@@ -726,9 +695,6 @@ export const getSendTimeStatsEndpoint = createAuthRoleFactory('admin', 'manager'
         };
     },
 });
-/**
- * Preview send time distribution for a campaign
- */
 export const previewCampaignSendTimesEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'post',
     shortDescription: 'Preview Campaign Send Times',
@@ -753,12 +719,10 @@ export const previewCampaignSendTimesEndpoint = createAuthRoleFactory('admin', '
         if (!campaign) {
             throw new Error('Campaign not found');
         }
-        // Get targeted customers (simplified - use preview endpoint logic)
-        // For now, just get all customers with email
         const customers = await prisma.customer.findMany({
             where: { optOut: false, email: { not: null } },
             select: { id: true },
-            take: 10000, // Limit for preview
+            take: 10000,
         });
         const customerIds = customers.map((c) => c.id);
         const distribution = await getSendTimeDistribution(customerIds);
@@ -773,13 +737,7 @@ export const previewCampaignSendTimesEndpoint = createAuthRoleFactory('admin', '
         };
     },
 });
-// ============================================================
-// BROWSE ABANDONMENT ENDPOINTS
-// ============================================================
 import { getBrowseAbandonmentScheduleInfo, triggerBrowseAbandonmentNow, isBrowseAbandonmentWorkerRunning, } from '../utils/bullmq/browse-abandonment-worker';
-/**
- * Get browse abandonment status
- */
 export const browseAbandonmentStatusEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Browse Abandonment Status',
@@ -813,9 +771,6 @@ export const browseAbandonmentStatusEndpoint = createAuthRoleFactory('admin').bu
         };
     },
 });
-/**
- * Trigger browse abandonment detection now
- */
 export const triggerBrowseAbandonmentEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Trigger Browse Abandonment',
@@ -841,9 +796,6 @@ export const triggerBrowseAbandonmentEndpoint = createAuthRoleFactory('admin').b
         };
     },
 });
-/**
- * Get browse abandonment statistics
- */
 export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Browse Abandonment Stats',
@@ -868,7 +820,6 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
     handler: async ({ input }) => {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - input.days);
-        // Count product views
         const viewEvents = await prisma.customerEvent.findMany({
             where: {
                 eventType: 'product_viewed',
@@ -879,7 +830,6 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
                 eventData: true,
             },
         });
-        // Count browse abandonment events
         const abandonedEvents = await prisma.customerEvent.findMany({
             where: {
                 eventType: 'browse_abandoned',
@@ -890,7 +840,6 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
                 eventData: true,
             },
         });
-        // Count flow enrollments triggered by browse_abandoned
         const flowEnrollments = await prisma.flowEnrollment.count({
             where: {
                 enrolledAt: { gte: cutoffDate },
@@ -899,7 +848,6 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
                 },
             },
         });
-        // Build product stats
         const productViews = new Map();
         for (const event of viewEvents) {
             const data = event.eventData;
@@ -919,7 +867,6 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
             }
             productViews.get(productId).abandoned++;
         }
-        // Top 10 products by abandonment
         const topProducts = Array.from(productViews.entries())
             .map(([productId, data]) => ({
             productId,
@@ -941,14 +888,8 @@ export const browseAbandonmentStatsEndpoint = createAuthRoleFactory('admin', 'ma
         };
     },
 });
-// ============================================================
-// PREDICTIVE ANALYTICS ENDPOINTS
-// ============================================================
 import { getPredictionJobStatus, triggerPredictionCalculation, } from '../utils/bullmq/prediction-worker';
 import { getPredictionStats, calculateCustomerPrediction, savePrediction, } from '../utils/prediction-calculator';
-/**
- * Get prediction worker status
- */
 export const predictionStatusEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Prediction Status',
@@ -988,9 +929,6 @@ export const predictionStatusEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * Trigger prediction calculation now
- */
 export const triggerPredictionEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Trigger Prediction Calculation',
@@ -1019,9 +957,6 @@ export const triggerPredictionEndpoint = createAuthRoleFactory('admin').build({
         };
     },
 });
-/**
- * Get prediction statistics
- */
 export const predictionStatsEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Prediction Stats',
@@ -1056,9 +991,6 @@ export const predictionStatsEndpoint = createAuthRoleFactory('admin', 'manager')
         return await getPredictionStats();
     },
 });
-/**
- * Get prediction for a specific customer
- */
 export const getCustomerPredictionEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'get',
     shortDescription: 'Get Customer Prediction',
@@ -1150,9 +1082,6 @@ export const getCustomerPredictionEndpoint = createAuthRoleFactory('admin', 'man
         };
     },
 });
-/**
- * Recalculate prediction for a specific customer
- */
 export const recalculateCustomerPredictionEndpoint = createAuthRoleFactory('admin').build({
     method: 'post',
     shortDescription: 'Recalculate Customer Prediction',
@@ -1181,7 +1110,6 @@ export const recalculateCustomerPredictionEndpoint = createAuthRoleFactory('admi
         };
         const predictionResult = await calculateCustomerPrediction(input.customerId, config);
         await savePrediction(predictionResult);
-        // Fetch the saved prediction to get the calculatedAt timestamp
         const savedPrediction = await prisma.customerPrediction.findUnique({
             where: { customerId: input.customerId },
         });

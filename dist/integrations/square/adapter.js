@@ -1,7 +1,3 @@
-/**
- * Square Platform Adapter
- * Handles OAuth and data sync for Square merchants
- */
 import crypto from 'crypto';
 const SQUARE_WEBHOOK_EVENTS = [
     'customer.created',
@@ -24,9 +20,6 @@ export class SquareAdapter {
                 ? 'https://connect.squareupsandbox.com'
                 : 'https://connect.squareup.com';
     }
-    /**
-     * Generate OAuth authorization URL
-     */
     getAuthUrl(_locationId, redirectUri, state) {
         const scopes = [
             'CUSTOMERS_READ',
@@ -42,16 +35,13 @@ export class SquareAdapter {
             `&state=${state}` +
             `&session=false`);
     }
-    /**
-     * Exchange authorization code for access token
-     */
     async exchangeCodeForToken(_locationId, code, redirectUri) {
         const response = await fetch(`${this.baseUrl}/oauth2/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 client_id: this.config.applicationId,
-                client_secret: this.config.accessToken, // Application secret
+                client_secret: this.config.accessToken,
                 code,
                 redirect_uri: redirectUri,
                 grant_type: 'authorization_code',
@@ -68,9 +58,6 @@ export class SquareAdapter {
             scopes: ['CUSTOMERS_READ', 'ORDERS_READ', 'PAYMENTS_READ'],
         };
     }
-    /**
-     * Refresh access token
-     */
     async refreshAccessToken(refreshToken) {
         const response = await fetch(`${this.baseUrl}/oauth2/token`, {
             method: 'POST',
@@ -93,12 +80,8 @@ export class SquareAdapter {
             scopes: ['CUSTOMERS_READ', 'ORDERS_READ', 'PAYMENTS_READ'],
         };
     }
-    /**
-     * Register webhooks with Square
-     */
     async registerWebhooks(_locationId, accessToken, callbackUrl) {
         const webhookIds = [];
-        // Create webhook subscription
         const response = await fetch(`${this.baseUrl}/v2/webhooks/subscriptions`, {
             method: 'POST',
             headers: {
@@ -121,9 +104,6 @@ export class SquareAdapter {
         }
         return webhookIds;
     }
-    /**
-     * Unregister webhooks
-     */
     async unregisterWebhooks(_locationId, accessToken, webhookIds) {
         for (const webhookId of webhookIds) {
             try {
@@ -137,18 +117,10 @@ export class SquareAdapter {
             }
         }
     }
-    /**
-     * Verify webhook signature
-     */
     verifyWebhook(rawBody, signature, secret) {
-        // Square uses notification URL + body for signature
         const hmac = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64');
         return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
     }
-    /**
-     * Fetch customers from Square
-     * Uses GET /v2/customers with query parameters
-     */
     async fetchCustomers(_locationId, accessToken, cursor) {
         const limit = 100;
         const params = new URLSearchParams({ limit: String(limit) });
@@ -172,12 +144,8 @@ export class SquareAdapter {
             cursor: result.cursor,
         };
     }
-    /**
-     * Fetch orders from Square
-     */
     async fetchOrders(locationId, accessToken, cursor, sinceDate) {
         const limit = 100;
-        // First, get locations if we don't have one
         let locations = [];
         if (locationId) {
             locations = [locationId];
@@ -230,9 +198,6 @@ export class SquareAdapter {
             cursor: result.cursor,
         };
     }
-    /**
-     * Parse webhook payload
-     */
     parseWebhookPayload(topic, payload) {
         const data = payload;
         if (topic.includes('customer') && !topic.includes('deleted') && data.data?.object?.customer) {
@@ -246,9 +211,6 @@ export class SquareAdapter {
         }
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapCustomer(c) {
         const name = [c.given_name, c.family_name].filter(Boolean).join(' ') ||
             c.nickname ||
@@ -283,15 +245,12 @@ export class SquareAdapter {
         else if (stateLower === 'canceled') {
             status = 'cancelled';
         }
-        // Check for refunds
         const hasFullRefund = o.refunds?.some((r) => r.status === 'COMPLETED' && r.amount_money?.amount === o.total_money?.amount) || false;
         if (hasFullRefund) {
             status = 'refunded';
         }
-        // Square amounts are in smallest currency unit (cents)
         const total = (o.total_money?.amount || 0) / 100;
         const currency = o.total_money?.currency || 'USD';
-        // Get coupon/discount code
         const discountName = o.discounts?.[0]?.name || null;
         return {
             externalId: `square:${o.id}`,
@@ -313,9 +272,6 @@ export class SquareAdapter {
         };
     }
 }
-/**
- * Create Square adapter
- */
 export function createSquareAdapter(config) {
     return new SquareAdapter({
         platform: 'SQUARE',

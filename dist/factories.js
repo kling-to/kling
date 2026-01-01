@@ -2,9 +2,7 @@ import { Middleware, defaultEndpointsFactory } from 'express-zod-api';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import createHttpError from 'http-errors';
-// Read JWT_SECRET lazily to ensure dotenv has loaded
 const getJwtSecret = () => process.env.JWT_SECRET || 'dev-secret';
-// Authentication middleware - exposes user and request in context
 export const authMiddleware = new Middleware({
     input: z.object({}),
     handler: async ({ request }) => {
@@ -34,8 +32,6 @@ export const authMiddleware = new Middleware({
         }
     },
 });
-// Role-based access control middleware factory
-// Roles hierarchy: admin > manager > staff
 export const createRoleMiddleware = (...allowed) => new Middleware({
     input: z.object({}),
     handler: async ({ request }) => {
@@ -71,7 +67,6 @@ export const createRoleMiddleware = (...allowed) => new Middleware({
         }
     },
 });
-// Public middleware that exposes request in context
 export const publicWithRequestMiddleware = new Middleware({
     input: z.object({}),
     handler: async ({ request }) => {
@@ -84,11 +79,7 @@ export const publicWithRequestMiddleware = new Middleware({
         };
     },
 });
-// Base factory (no authentication)
 export const publicFactory = defaultEndpointsFactory;
-// Public factory with request access
 export const publicWithRequestFactory = defaultEndpointsFactory.addMiddleware(publicWithRequestMiddleware);
-// Authenticated factory
 export const authFactory = defaultEndpointsFactory.addMiddleware(authMiddleware);
-// Factory with role requirement
 export const createAuthRoleFactory = (...roles) => defaultEndpointsFactory.addMiddleware(createRoleMiddleware(...roles));

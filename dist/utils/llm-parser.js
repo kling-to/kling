@@ -1,67 +1,45 @@
-/**
- * LLM DSL Parser
- *
- * Converts natural language campaign descriptions into structured DSL
- * using OpenAI's API.
- */
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import prisma from './prisma';
 import { getFlowTemplates } from './flow-templates';
-// Cached OpenAI client - will be refreshed when API key changes
 let openai = null;
 let cachedApiKey = null;
-/**
- * Get OpenAI client, fetching API key from database settings.
- * Caches the client and refreshes when key changes.
- */
 async function getOpenAIClient() {
     const settings = await prisma.settings.findFirst();
     const apiKey = settings?.openaiApiKey;
     if (!apiKey) {
         return null;
     }
-    // Create new client if API key changed or no client exists
     if (!openai || cachedApiKey !== apiKey) {
         openai = new OpenAI({ apiKey });
         cachedApiKey = apiKey;
     }
     return openai;
 }
-/**
- * Schema for discount configuration
- */
 export const DiscountSchema = z.object({
     type: z.enum(['percentage', 'fixed_amount', 'free_shipping']),
-    value: z.number(), // <1 for percentage (e.g., 0.15 = 15%), >=1 for fixed amount
-    code: z.string().optional(), // Auto-generated if not provided
+    value: z.number(),
+    code: z.string().optional(),
 });
-/**
- * Schema for gift configuration
- */
 export const GiftSchema = z.object({
     type: z.enum(['free_sku', 'free_sample', 'redemption_code']),
-    sku: z.string().optional(), // SKU for free_sku type
-    value: z.string().optional(), // Description for free_sample, code for redemption_code
+    sku: z.string().optional(),
+    value: z.string().optional(),
 });
-/**
- * Schema for parsed campaign DSL
- */
 export const CampaignDSLSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
-    cron: z.string().nullable(), // Required for recurring, optional for once
+    cron: z.string().nullable(),
     startAt: z.string(),
     endAt: z.string(),
-    query: z.record(z.string(), z.unknown()), // Flexible query DSL
+    query: z.record(z.string(), z.unknown()),
     messageTemplate: z.string(),
     channel: z.enum(['email', 'sms']),
     conditions: z.record(z.string(), z.unknown()).nullable(),
-    executionType: z.enum(['recurring', 'once']).optional(), // Default: recurring
+    executionType: z.enum(['recurring', 'once']).optional(),
     discount: DiscountSchema.nullable().optional(),
     gift: GiftSchema.nullable().optional(),
-    // Product recommendations
     includeRecommendations: z.boolean().nullable().optional(),
     recommendationAlgorithm: z
         .enum([
@@ -77,35 +55,25 @@ export const CampaignDSLSchema = z.object({
     recommendationLimit: z.number().nullable().optional(),
     excludePurchasedProducts: z.boolean().nullable().optional(),
 });
-/**
- * Combined response schema for structured outputs
- * Handles both valid campaigns and rejection responses
- * Note: query and conditions are JSON strings to avoid z.record() which generates
- * unsupported 'propertyNames' in OpenAI structured outputs
- */
 const LLMResponseSchema = z.object({
     valid: z.boolean(),
-    // Rejection fields (present when valid=false)
     rejected: z.boolean().nullable(),
     reason: z.string().nullable(),
     category: z
         .enum(['gibberish', 'unrelated', 'unsafe', 'impossible', 'malicious', 'ambiguous'])
         .nullable(),
-    // Campaign fields (present when valid=true)
     name: z.string().nullable(),
     description: z.string().nullable(),
     cron: z.string().nullable(),
     startAt: z.string().nullable(),
     endAt: z.string().nullable(),
-    queryJson: z.string().nullable(), // JSON string of query object
+    queryJson: z.string().nullable(),
     messageTemplate: z.string().nullable(),
     channel: z.enum(['email', 'sms']).nullable(),
-    conditionsJson: z.string().nullable(), // JSON string of conditions object
-    executionType: z.enum(['recurring', 'once']).nullable(), // recurring (cron-based) or once (single execution)
-    // Promotion fields (optional)
-    discountJson: z.string().nullable(), // JSON string of discount object
-    giftJson: z.string().nullable(), // JSON string of gift object
-    // Product recommendations (optional)
+    conditionsJson: z.string().nullable(),
+    executionType: z.enum(['recurring', 'once']).nullable(),
+    discountJson: z.string().nullable(),
+    giftJson: z.string().nullable(),
     includeRecommendations: z.boolean().nullable(),
     recommendationAlgorithm: z
         .enum([
@@ -120,9 +88,6 @@ const LLMResponseSchema = z.object({
     recommendationLimit: z.number().nullable(),
     excludePurchasedProducts: z.boolean().nullable(),
 });
-/**
- * System prompt for the LLM
- */
 const SYSTEM_PROMPT = `You are a campaign DSL generator for a customer engagement platform.
 Convert natural language descriptions into structured JSON campaign definitions.
 
@@ -484,9 +449,6 @@ Examples of prompts requiring nested logic:
   → Use OR for categories, NOT for exclusion
 
 Only output valid JSON, no explanations.`;
-/**
- * Parse natural language into campaign DSL using OpenAI
- */
 export async function parseNaturalLanguageToCampaignDSL(prompt, timezone = 'UTC') {
     const client = await getOpenAIClient();
     if (!client) {
@@ -512,13 +474,12 @@ Convert this campaign description to JSON:
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user', content: userPrompt },
             ],
-            temperature: 0.1, // Low temperature for consistent output
+            temperature: 0.1,
             max_output_tokens: 1000,
             text: {
                 format: zodTextFormat(LLMResponseSchema, 'campaign_dsl'),
             },
         });
-        // Check for incomplete response
         if (response.status === 'incomplete') {
             const reason = response.incomplete_details?.reason;
             return {
@@ -526,7 +487,6 @@ Convert this campaign description to JSON:
                 error: `Incomplete response from LLM: ${reason || 'unknown reason'}`,
             };
         }
-        // Check for refusal in output
         const outputItem = response.output?.[0];
         if (outputItem && 'content' in outputItem) {
             const content = outputItem.content?.[0];
@@ -537,7 +497,6 @@ Convert this campaign description to JSON:
                 };
             }
         }
-        // Get the parsed output
         const parsed = response.output_parsed;
         if (!parsed) {
             return {
@@ -546,7 +505,6 @@ Convert this campaign description to JSON:
             };
         }
         const rawResponse = response.output_text;
-        // Check if this is a rejection response
         if (parsed.valid === false && parsed.rejected === true) {
             return {
                 success: false,
@@ -556,11 +514,9 @@ Convert this campaign description to JSON:
                 rawResponse,
             };
         }
-        // Validate campaign fields are present
-        // Note: cron is optional for "once" campaigns
         const isOnce = parsed.executionType === 'once';
         if (!parsed.name ||
-            (!isOnce && !parsed.cron) || // cron required only for recurring campaigns
+            (!isOnce && !parsed.cron) ||
             !parsed.startAt ||
             !parsed.endAt ||
             !parsed.messageTemplate ||
@@ -572,7 +528,6 @@ Convert this campaign description to JSON:
                 rawResponse,
             };
         }
-        // Parse the query JSON string
         let query;
         try {
             query = JSON.parse(parsed.queryJson);
@@ -584,7 +539,6 @@ Convert this campaign description to JSON:
                 rawResponse,
             };
         }
-        // Parse conditions JSON string if present
         let conditions = null;
         if (parsed.conditionsJson) {
             try {
@@ -598,29 +552,24 @@ Convert this campaign description to JSON:
                 };
             }
         }
-        // Parse discount JSON string if present
         let discount = null;
         if (parsed.discountJson) {
             try {
                 discount = JSON.parse(parsed.discountJson);
             }
             catch {
-                // Non-fatal: continue without discount
                 console.warn('Failed to parse discountJson:', parsed.discountJson);
             }
         }
-        // Parse gift JSON string if present
         let gift = null;
         if (parsed.giftJson) {
             try {
                 gift = JSON.parse(parsed.giftJson);
             }
             catch {
-                // Non-fatal: continue without gift
                 console.warn('Failed to parse giftJson:', parsed.giftJson);
             }
         }
-        // Build the campaign DSL from parsed response
         const dsl = {
             name: parsed.name,
             description: parsed.description,
@@ -634,13 +583,11 @@ Convert this campaign description to JSON:
             executionType: parsed.executionType || 'recurring',
             discount,
             gift,
-            // Product recommendations
             includeRecommendations: parsed.includeRecommendations,
             recommendationAlgorithm: parsed.recommendationAlgorithm,
             recommendationLimit: parsed.recommendationLimit,
             excludePurchasedProducts: parsed.excludePurchasedProducts,
         };
-        // Convert relative dates in query to actual dates
         if (dsl.query) {
             dsl.query = processRelativeDates(dsl.query);
         }
@@ -658,21 +605,15 @@ Convert this campaign description to JSON:
         };
     }
 }
-/**
- * Process relative date strings in query to actual ISO dates.
- * Recursively handles nested structures including order relation filters.
- */
 function processRelativeDates(obj) {
     const result = {};
     for (const [key, value] of Object.entries(obj)) {
         if (typeof value === 'string' && value.includes('_days_ago')) {
-            // Direct relative date string
             const daysMatch = value.match(/(\d+)_days_ago/);
             if (daysMatch) {
                 const days = parseInt(daysMatch[1], 10);
                 const date = new Date();
                 date.setDate(date.getDate() - days);
-                // For top-level fields, wrap in operator; for nested, return raw date
                 result[key] = date.toISOString();
             }
             else {
@@ -680,11 +621,9 @@ function processRelativeDates(obj) {
             }
         }
         else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-            // Recursively process nested objects (handles orders, items, etc.)
             result[key] = processRelativeDates(value);
         }
         else if (Array.isArray(value)) {
-            // Process arrays recursively
             result[key] = value.map((item) => typeof item === 'object' && item !== null
                 ? processRelativeDates(item)
                 : item);
@@ -695,26 +634,19 @@ function processRelativeDates(obj) {
     }
     return result;
 }
-/**
- * Validate a cron expression
- */
 export function validateCronExpression(cron) {
     const parts = cron.trim().split(/\s+/);
     if (parts.length !== 5)
         return false;
-    // Basic validation - each part should be valid
     const patterns = [
-        /^(\*|[0-5]?\d)(-[0-5]?\d)?(\/\d+)?(,(\*|[0-5]?\d)(-[0-5]?\d)?(\/\d+)?)*$/, // minute
-        /^(\*|[01]?\d|2[0-3])(-([01]?\d|2[0-3]))?(\/\d+)?(,(\*|[01]?\d|2[0-3])(-([01]?\d|2[0-3]))?(\/\d+)?)*$/, // hour
-        /^(\*|[1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?(\/\d+)?(,(\*|[1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?(\/\d+)?)*$/, // day of month
-        /^(\*|[1-9]|1[0-2])(-([1-9]|1[0-2]))?(\/\d+)?(,(\*|[1-9]|1[0-2])(-([1-9]|1[0-2]))?(\/\d+)?)*$/, // month
-        /^(\*|[0-6])(-[0-6])?(\/\d+)?(,(\*|[0-6])(-[0-6])?(\/\d+)?)*$/, // day of week
+        /^(\*|[0-5]?\d)(-[0-5]?\d)?(\/\d+)?(,(\*|[0-5]?\d)(-[0-5]?\d)?(\/\d+)?)*$/,
+        /^(\*|[01]?\d|2[0-3])(-([01]?\d|2[0-3]))?(\/\d+)?(,(\*|[01]?\d|2[0-3])(-([01]?\d|2[0-3]))?(\/\d+)?)*$/,
+        /^(\*|[1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?(\/\d+)?(,(\*|[1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?(\/\d+)?)*$/,
+        /^(\*|[1-9]|1[0-2])(-([1-9]|1[0-2]))?(\/\d+)?(,(\*|[1-9]|1[0-2])(-([1-9]|1[0-2]))?(\/\d+)?)*$/,
+        /^(\*|[0-6])(-[0-6])?(\/\d+)?(,(\*|[0-6])(-[0-6])?(\/\d+)?)*$/,
     ];
     return parts.every((part, i) => patterns[i].test(part));
 }
-/**
- * Convert channel string to MessageChannel enum
- */
 export function parseChannel(channel) {
     const channelMap = {
         email: 'email',
@@ -722,37 +654,22 @@ export function parseChannel(channel) {
     };
     return channelMap[channel.toLowerCase()] || 'email';
 }
-// ========================================================
-// FLOW DSL PARSING
-// ========================================================
-/**
- * Flow node schema
- */
 const FlowNodeSchema = z.object({
     id: z.string(),
     type: z.enum(['send_email', 'send_sms', 'wait', 'conditional_split', 'exit_flow']),
     config: z.record(z.string(), z.unknown()),
 });
-/**
- * Flow edge schema
- */
 const FlowEdgeSchema = z.object({
     id: z.string(),
     from: z.string(),
     to: z.string(),
     condition: z.string().optional(),
 });
-/**
- * Flow definition schema
- */
 const FlowDefinitionSchema = z.object({
     nodes: z.array(FlowNodeSchema),
     edges: z.array(FlowEdgeSchema),
     startNodeId: z.string(),
 });
-/**
- * Schema for parsed flow DSL
- */
 export const FlowDSLSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
@@ -772,21 +689,15 @@ export const FlowDSLSchema = z.object({
     allowReenrollment: z.boolean(),
     reenrollmentWaitDays: z.number().nullable(),
 });
-/**
- * Combined response schema for flow structured outputs
- */
 const FlowLLMResponseSchema = z.object({
     valid: z.boolean(),
-    // Rejection fields (present when valid=false)
     rejected: z.boolean().nullable(),
     reason: z.string().nullable(),
     category: z
         .enum(['gibberish', 'unrelated', 'unsafe', 'impossible', 'malicious', 'ambiguous'])
         .nullable(),
-    // Recommendation to use template (when applicable)
     useTemplate: z.boolean().nullable(),
     templateId: z.string().nullable(),
-    // Flow fields (present when valid=true and useTemplate=false)
     name: z.string().nullable(),
     description: z.string().nullable(),
     triggerType: z
@@ -801,13 +712,10 @@ const FlowLLMResponseSchema = z.object({
     ])
         .nullable(),
     triggerConfigJson: z.string().nullable(),
-    definitionJson: z.string().nullable(), // JSON string of flow definition
+    definitionJson: z.string().nullable(),
     allowReenrollment: z.boolean().nullable(),
     reenrollmentWaitDays: z.number().nullable(),
 });
-/**
- * Build system prompt for flow parsing
- */
 function buildFlowSystemPrompt() {
     const templates = getFlowTemplates();
     const templateList = templates
@@ -935,9 +843,6 @@ TEMPLATE MATCHING:
 
 Only output valid JSON, no explanations.`;
 }
-/**
- * Node type labels for display
- */
 const nodeTypeLabels = {
     trigger: 'Trigger',
     send_email: 'Send Email',
@@ -946,9 +851,6 @@ const nodeTypeLabels = {
     conditional_split: 'Conditional Split',
     exit_flow: 'Exit Flow',
 };
-/**
- * Trigger type labels for display
- */
 const triggerTypeLabels = {
     customer_joined_list: 'Customer Joined List',
     abandoned_cart: 'Abandoned Cart',
@@ -959,22 +861,9 @@ const triggerTypeLabels = {
     subscription_cancelled: 'Subscription Cancelled',
     custom_event: 'Custom Event',
 };
-/**
- * Transform LLM-generated flow definition to match frontend expected format.
- *
- * LLM generates: { nodes: [{ id, type, config }], edges: [{ id, from, to }], startNodeId }
- * Frontend expects: { nodes: [{ id, type, position: {x,y}, data: {label, config} }], edges: [{ id, source, target }], startNodeId }
- *
- * This function:
- * 1. Adds a trigger node at the start
- * 2. Transforms node config to data.config format
- * 3. Adds position coordinates for React Flow
- * 4. Converts edge from/to to source/target
- */
 function transformFlowDefinitionForFrontend(definition, triggerType, triggerConfig) {
     const Y_SPACING = 120;
     const X_CENTER = 250;
-    // Create trigger node
     const triggerNodeId = 'trigger-node';
     const triggerNode = {
         id: triggerNodeId,
@@ -988,15 +877,12 @@ function transformFlowDefinitionForFrontend(definition, triggerType, triggerConf
             },
         },
     };
-    // Transform existing nodes and add positions
     const transformedNodes = definition.nodes.map((node, index) => {
-        // Handle both formats: { config } and { data: { config } }
         const nodeAny = node;
         const existingConfig = nodeAny.config;
         const existingData = nodeAny.data;
         const config = existingData?.config || existingConfig || {};
         const label = existingData?.label || nodeTypeLabels[node.type] || node.type;
-        // Calculate position (trigger node is at index 0, so add 1)
         const position = node.position || {
             x: X_CENTER,
             y: (index + 1) * Y_SPACING + 50,
@@ -1011,12 +897,9 @@ function transformFlowDefinitionForFrontend(definition, triggerType, triggerConf
             },
         };
     });
-    // Add trigger node at the beginning
     const allNodes = [triggerNode, ...transformedNodes];
-    // Transform edges: convert from/to to source/target
     const transformedEdges = definition.edges.map((edge, index) => {
         const edgeAny = edge;
-        // Handle both formats: { from, to } and { source, target }
         const source = edgeAny.source || edgeAny.from || '';
         const target = edgeAny.target || edgeAny.to || '';
         const condition = edgeAny.condition;
@@ -1027,24 +910,18 @@ function transformFlowDefinitionForFrontend(definition, triggerType, triggerConf
             ...(condition && { label: condition, data: { condition } }),
         };
     });
-    // Add edge from trigger to the first node (startNodeId)
     const triggerEdge = {
         id: 'trigger-edge',
         source: triggerNodeId,
         target: definition.startNodeId,
     };
     const allEdges = [triggerEdge, ...transformedEdges];
-    // Return transformed definition - use unknown to allow different structure
-    // The transformed format matches frontend expectations, not the LLM schema
     return {
         nodes: allNodes,
         edges: allEdges,
-        startNodeId: triggerNodeId, // Trigger is now the start
+        startNodeId: triggerNodeId,
     };
 }
-/**
- * Parse natural language into flow DSL using OpenAI
- */
 export async function parseNaturalLanguageToFlowDSL(prompt) {
     const client = await getOpenAIClient();
     if (!client) {
@@ -1068,7 +945,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 format: zodTextFormat(FlowLLMResponseSchema, 'flow_dsl'),
             },
         });
-        // Check for incomplete response
         if (response.status === 'incomplete') {
             const reason = response.incomplete_details?.reason;
             return {
@@ -1076,7 +952,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 error: `Incomplete response from LLM: ${reason || 'unknown reason'}`,
             };
         }
-        // Check for refusal
         const outputItem = response.output?.[0];
         if (outputItem && 'content' in outputItem) {
             const content = outputItem.content?.[0];
@@ -1095,7 +970,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
             };
         }
         const rawResponse = response.output_text;
-        // Check if this is a rejection response
         if (parsed.valid === false && parsed.rejected === true) {
             return {
                 success: false,
@@ -1105,7 +979,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 rawResponse,
             };
         }
-        // Check if LLM recommends using a template
         if (parsed.useTemplate === true && parsed.templateId) {
             return {
                 success: true,
@@ -1114,7 +987,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 rawResponse,
             };
         }
-        // Validate custom flow fields
         if (!parsed.name || !parsed.triggerType || !parsed.definitionJson) {
             return {
                 success: false,
@@ -1122,7 +994,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 rawResponse,
             };
         }
-        // Parse the definition JSON string
         let definition;
         try {
             definition = JSON.parse(parsed.definitionJson);
@@ -1134,18 +1005,15 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
                 rawResponse,
             };
         }
-        // Parse trigger config if present
         let triggerConfig = null;
         if (parsed.triggerConfigJson) {
             try {
                 triggerConfig = JSON.parse(parsed.triggerConfigJson);
             }
             catch {
-                // Non-fatal
                 console.warn('Failed to parse triggerConfigJson');
             }
         }
-        // Transform the definition to match frontend expected format
         const transformedDefinition = transformFlowDefinitionForFrontend(definition, parsed.triggerType, triggerConfig);
         const dsl = {
             name: parsed.name,
@@ -1170,9 +1038,6 @@ export async function parseNaturalLanguageToFlowDSL(prompt) {
         };
     }
 }
-/**
- * Schema for subject line generation response
- */
 const SubjectLineResponseSchema = z.object({
     suggestions: z.array(z.object({
         subject: z.string(),
@@ -1180,9 +1045,6 @@ const SubjectLineResponseSchema = z.object({
         reasoning: z.string(),
     })),
 });
-/**
- * System prompt for subject line generation
- */
 const SUBJECT_LINE_SYSTEM_PROMPT = `You are an expert email marketing copywriter specializing in subject lines.
 Generate compelling subject lines that drive high open rates.
 
@@ -1208,9 +1070,6 @@ Each suggestion must include:
 - subject: The subject line text (under 60 chars)
 - tone: One of the tone types
 - reasoning: Brief explanation of why this works (1 sentence)`;
-/**
- * Generate subject line suggestions for a campaign
- */
 export async function generateSubjectLines(campaignName, campaignDescription, messageBody, discount, gift) {
     const client = await getOpenAIClient();
     if (!client) {
@@ -1220,7 +1079,6 @@ export async function generateSubjectLines(campaignName, campaignDescription, me
         };
     }
     try {
-        // Build context for the LLM
         let context = `Campaign Name: ${campaignName}\n`;
         if (campaignDescription) {
             context += `Campaign Description: ${campaignDescription}\n`;
@@ -1246,13 +1104,12 @@ Remember to:
                 { role: 'system', content: SUBJECT_LINE_SYSTEM_PROMPT },
                 { role: 'user', content: userPrompt },
             ],
-            temperature: 0.8, // Higher temperature for creative variation
+            temperature: 0.8,
             max_output_tokens: 1000,
             text: {
                 format: zodTextFormat(SubjectLineResponseSchema, 'subject_lines'),
             },
         });
-        // Check for incomplete response
         if (response.status === 'incomplete') {
             const reason = response.incomplete_details?.reason;
             return {

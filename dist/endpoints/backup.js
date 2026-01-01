@@ -1,8 +1,3 @@
-/**
- * Database Backup Endpoints
- *
- * Admin-only endpoints for managing database backups.
- */
 import { z } from 'zod';
 import createHttpError from 'http-errors';
 import { createAuthRoleFactory } from '../factories';
@@ -18,7 +13,6 @@ import os from 'os';
 import * as tar from 'tar';
 const execAsync = promisify(exec);
 const adminFactory = createAuthRoleFactory('admin');
-// Backup schema for responses
 const backupSchema = z.object({
     id: z.string(),
     filename: z.string(),
@@ -36,7 +30,6 @@ const backupSchema = z.object({
     triggeredBy: z.string(),
     createdAt: z.date(),
 });
-// Get backup status and schedule info
 export const getBackupStatusEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Backup Status',
@@ -73,7 +66,6 @@ export const getBackupStatusEndpoint = adminFactory.build({
         };
     },
 });
-// List backups from database
 export const listBackupsEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'List Backups',
@@ -123,7 +115,6 @@ export const listBackupsEndpoint = adminFactory.build({
         };
     },
 });
-// Trigger manual backup
 export const triggerBackupEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Trigger Backup',
@@ -144,7 +135,6 @@ export const triggerBackupEndpoint = adminFactory.build({
         };
     },
 });
-// Get backup download URL
 export const getBackupDownloadEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'Download Backup',
@@ -167,7 +157,7 @@ export const getBackupDownloadEndpoint = adminFactory.build({
         if (!backup.s3Key) {
             throw createHttpError(400, 'Backup is not stored in S3');
         }
-        const expiresIn = 3600; // 1 hour
+        const expiresIn = 3600;
         const downloadUrl = await getBackupDownloadUrl(backup.s3Key, expiresIn);
         return {
             downloadUrl,
@@ -175,7 +165,6 @@ export const getBackupDownloadEndpoint = adminFactory.build({
         };
     },
 });
-// List S3 backups
 export const listS3BackupsEndpoint = adminFactory.build({
     method: 'get',
     shortDescription: 'List S3 Backups',
@@ -199,7 +188,6 @@ export const listS3BackupsEndpoint = adminFactory.build({
         return { backups };
     },
 });
-// Test S3 connection
 export const testS3ConnectionEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Test S3 Connection',
@@ -214,7 +202,6 @@ export const testS3ConnectionEndpoint = adminFactory.build({
         return await testS3Connection();
     },
 });
-// Restore from S3
 export const restoreFromS3Endpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Restore from S3',
@@ -231,22 +218,18 @@ export const restoreFromS3Endpoint = adminFactory.build({
     }),
     handler: async ({ input }) => {
         const { s3Key, dryRun } = input;
-        // Create temp directory
         const timestamp = Date.now();
         const tempDir = path.join(os.tmpdir(), `kling-restore-${timestamp}`);
         const archivePath = path.join(tempDir, 'backup.tar.gz');
         try {
             await fs.mkdir(tempDir, { recursive: true });
-            // Download from S3
             console.log(`[Restore] Downloading ${s3Key} from S3...`);
             await downloadBackupFromS3(s3Key, archivePath);
-            // Extract archive
             console.log(`[Restore] Extracting archive...`);
             await tar.extract({
                 file: archivePath,
                 cwd: tempDir,
             });
-            // Find the dump directory
             const dumpDir = path.join(tempDir, 'dump');
             const dumpExists = await fs
                 .stat(dumpDir)
@@ -255,23 +238,19 @@ export const restoreFromS3Endpoint = adminFactory.build({
             if (!dumpExists) {
                 throw createHttpError(400, 'Invalid backup archive: dump directory not found');
             }
-            // Get list of databases in dump
             const databases = await fs.readdir(dumpDir);
             console.log(`[Restore] Found databases: ${databases.join(', ')}`);
             if (dryRun) {
-                // Just return what would be restored
                 return {
                     success: true,
                     message: `Dry run: Would restore ${databases.length} database(s): ${databases.join(', ')}`,
                     collectionsRestored: databases.length,
                 };
             }
-            // Get database URI
             const databaseUrl = process.env.DATABASE_URL;
             if (!databaseUrl) {
                 throw createHttpError(500, 'DATABASE_URL environment variable is not set');
             }
-            // Run mongorestore
             console.log(`[Restore] Running mongorestore...`);
             const mongorestoreCmd = `mongorestore --uri="${databaseUrl}" --drop "${dumpDir}"`;
             try {
@@ -289,24 +268,21 @@ export const restoreFromS3Endpoint = adminFactory.build({
             };
         }
         finally {
-            // Cleanup temp files
             try {
                 await fs.rm(tempDir, { recursive: true, force: true });
             }
             catch {
-                // Ignore cleanup errors
             }
         }
     },
 });
-// Restore from uploaded file
 export const restoreFromUploadEndpoint = adminFactory.build({
     method: 'post',
     shortDescription: 'Restore from Upload',
     description: 'Restores database from an uploaded backup file (base64 encoded).',
     tag: 'Backup',
     input: z.object({
-        fileContent: z.string(), // Base64 encoded tar.gz
+        fileContent: z.string(),
         filename: z.string(),
         dryRun: z.boolean().optional().default(false),
     }),
@@ -317,22 +293,18 @@ export const restoreFromUploadEndpoint = adminFactory.build({
     }),
     handler: async ({ input }) => {
         const { fileContent, filename, dryRun } = input;
-        // Create temp directory
         const timestamp = Date.now();
         const tempDir = path.join(os.tmpdir(), `kling-restore-${timestamp}`);
         const archivePath = path.join(tempDir, filename);
         try {
             await fs.mkdir(tempDir, { recursive: true });
-            // Decode and write file
             const buffer = Buffer.from(fileContent, 'base64');
             await fs.writeFile(archivePath, buffer);
-            // Extract archive
             console.log(`[Restore] Extracting uploaded archive...`);
             await tar.extract({
                 file: archivePath,
                 cwd: tempDir,
             });
-            // Find the dump directory
             const dumpDir = path.join(tempDir, 'dump');
             const dumpExists = await fs
                 .stat(dumpDir)
@@ -341,7 +313,6 @@ export const restoreFromUploadEndpoint = adminFactory.build({
             if (!dumpExists) {
                 throw createHttpError(400, 'Invalid backup archive: dump directory not found');
             }
-            // Get list of databases in dump
             const databases = await fs.readdir(dumpDir);
             console.log(`[Restore] Found databases: ${databases.join(', ')}`);
             if (dryRun) {
@@ -351,12 +322,10 @@ export const restoreFromUploadEndpoint = adminFactory.build({
                     collectionsRestored: databases.length,
                 };
             }
-            // Get database URI
             const databaseUrl = process.env.DATABASE_URL;
             if (!databaseUrl) {
                 throw createHttpError(500, 'DATABASE_URL environment variable is not set');
             }
-            // Run mongorestore
             console.log(`[Restore] Running mongorestore...`);
             const mongorestoreCmd = `mongorestore --uri="${databaseUrl}" --drop "${dumpDir}"`;
             try {
@@ -374,17 +343,14 @@ export const restoreFromUploadEndpoint = adminFactory.build({
             };
         }
         finally {
-            // Cleanup temp files
             try {
                 await fs.rm(tempDir, { recursive: true, force: true });
             }
             catch {
-                // Ignore cleanup errors
             }
         }
     },
 });
-// Delete backup
 export const deleteBackupEndpoint = adminFactory.build({
     method: 'delete',
     shortDescription: 'Delete Backup',
@@ -404,17 +370,14 @@ export const deleteBackupEndpoint = adminFactory.build({
         if (!backup) {
             throw createHttpError(404, 'Backup not found');
         }
-        // Delete from S3 if exists
         if (backup.s3Key) {
             try {
                 await deleteBackupFromS3(backup.s3Key);
             }
             catch (error) {
                 console.error('[Backup] Failed to delete from S3:', error);
-                // Continue with database deletion even if S3 fails
             }
         }
-        // Delete from database
         await prisma.backup.delete({
             where: { id: input.backupId },
         });

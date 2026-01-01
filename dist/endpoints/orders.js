@@ -4,7 +4,6 @@ import prisma from '../utils/prisma';
 import createHttpError from 'http-errors';
 import { createAuditLog, AuditActions } from '../utils/audit';
 import { objectIdSchema } from '../utils/validation';
-// List orders endpoint
 export const listOrdersEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'List Orders',
@@ -46,7 +45,6 @@ export const listOrdersEndpoint = authFactory.build({
         const page = parseInt(input.page);
         const limit = Math.min(parseInt(input.limit), 100);
         const skip = (page - 1) * limit;
-        // Build where clause
         const where = {};
         if (input.customerId) {
             where.customerId = input.customerId;
@@ -93,7 +91,7 @@ export const listOrdersEndpoint = authFactory.build({
                 couponCode: order.couponCode,
                 itemCount: order._count.items,
                 purchasedAt: order.purchasedAt,
-                createdAt: order.purchasedAt, // Use purchasedAt as createdAt since Order doesn't have createdAt
+                createdAt: order.purchasedAt,
             })),
             pagination: {
                 page,
@@ -104,7 +102,6 @@ export const listOrdersEndpoint = authFactory.build({
         };
     },
 });
-// Get single order endpoint
 export const getOrderEndpoint = authFactory.build({
     method: 'get',
     shortDescription: 'Get Order',
@@ -180,7 +177,6 @@ export const getOrderEndpoint = authFactory.build({
         };
     },
 });
-// Create order endpoint (authenticated, for manual entry)
 export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'post',
     shortDescription: 'Create Order',
@@ -221,14 +217,12 @@ export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').bui
     }),
     handler: async ({ input, ctx }) => {
         const purchasedAt = input.purchasedAt ? new Date(input.purchasedAt) : new Date();
-        // Verify customer exists
         const customer = await prisma.customer.findUnique({
             where: { id: input.customerId },
         });
         if (!customer) {
             throw createHttpError(404, 'Customer not found');
         }
-        // Create order with items
         const order = await prisma.order.create({
             data: {
                 customerId: input.customerId,
@@ -255,7 +249,6 @@ export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').bui
                 },
             },
         });
-        // Update customer stats
         await prisma.customer.update({
             where: { id: input.customerId },
             data: {
@@ -264,7 +257,6 @@ export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').bui
                 totalSpent: { increment: input.total },
             },
         });
-        // Create customer event
         await prisma.customerEvent.create({
             data: {
                 customerId: input.customerId,
@@ -279,7 +271,6 @@ export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').bui
                 source: 'api',
             },
         });
-        // Audit log
         await createAuditLog({
             action: AuditActions.order.created,
             resourceType: 'order',
@@ -304,7 +295,6 @@ export const createOrderEndpoint = createAuthRoleFactory('admin', 'manager').bui
         };
     },
 });
-// Update order status endpoint
 export const updateOrderStatusEndpoint = createAuthRoleFactory('admin', 'manager').build({
     method: 'patch',
     shortDescription: 'Update Order Status',
@@ -334,7 +324,6 @@ export const updateOrderStatusEndpoint = createAuthRoleFactory('admin', 'manager
             where: { id: input.orderId },
             data: { status: input.status },
         });
-        // If refunded, adjust customer stats
         if ((input.status === 'refunded' || input.status === 'cancelled') &&
             previousStatus === 'completed') {
             await prisma.customer.update({
@@ -345,7 +334,6 @@ export const updateOrderStatusEndpoint = createAuthRoleFactory('admin', 'manager
                 },
             });
         }
-        // Audit log
         await createAuditLog({
             action: AuditActions.order.statusChanged,
             resourceType: 'order',
@@ -366,7 +354,6 @@ export const updateOrderStatusEndpoint = createAuthRoleFactory('admin', 'manager
         };
     },
 });
-// Delete order endpoint
 export const deleteOrderEndpoint = createAuthRoleFactory('admin').build({
     method: 'delete',
     shortDescription: 'Delete Order',
@@ -391,15 +378,12 @@ export const deleteOrderEndpoint = createAuthRoleFactory('admin').build({
         if (!order) {
             throw createHttpError(404, 'Order not found');
         }
-        // Delete order items first
         await prisma.orderItem.deleteMany({
             where: { orderId: input.orderId },
         });
-        // Delete the order
         await prisma.order.delete({
             where: { id: input.orderId },
         });
-        // Adjust customer stats if order was completed
         if (order.status === 'completed') {
             await prisma.customer.update({
                 where: { id: order.customerId },
@@ -409,7 +393,6 @@ export const deleteOrderEndpoint = createAuthRoleFactory('admin').build({
                 },
             });
         }
-        // Audit log
         await createAuditLog({
             action: AuditActions.order.deleted,
             resourceType: 'order',

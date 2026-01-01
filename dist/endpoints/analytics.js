@@ -1,19 +1,8 @@
-/**
- * Analytics Endpoints
- *
- * Revenue attribution and analytics dashboard endpoints.
- */
 import { z } from 'zod';
 import { createAuthRoleFactory } from '../factories';
 import prisma from '../utils/prisma';
 import { calculateFlowRevenue, calculateMultipleCampaignRevenue, } from '../utils/revenue-attribution';
 const staffFactory = createAuthRoleFactory('admin', 'manager', 'staff');
-// ============================================================
-// REVENUE DASHBOARD
-// ============================================================
-/**
- * Get revenue dashboard overview
- */
 export const getRevenueDashboardEndpoint = staffFactory.build({
     method: 'get',
     shortDescription: 'Get Revenue Dashboard',
@@ -60,16 +49,13 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
     }),
     handler: async ({ input }) => {
         const { period, limit, sortBy } = input;
-        // Calculate date range
         const periodDays = { '7d': 7, '14d': 14, '30d': 30, '90d': 90 }[period];
         const endDate = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - periodDays);
-        // Get attribution settings
         const settings = await prisma.settings.findFirst();
         const attributionWindow = settings?.attributionWindowDays || 7;
         const attributionModel = settings?.attributionModel || 'last_touch';
-        // Get all active/paused campaigns (not archived)
         const campaigns = await prisma.campaignDefinition.findMany({
             where: {
                 status: { not: 'archived' },
@@ -80,7 +66,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 channel: true,
             },
         });
-        // Get all active/paused flows
         const flows = await prisma.flow.findMany({
             where: {
                 status: { not: 'archived' },
@@ -91,10 +76,8 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 triggerType: true,
             },
         });
-        // Calculate campaign revenues in batch
         const campaignIds = campaigns.map((c) => c.id);
         const campaignRevenueMap = await calculateMultipleCampaignRevenue(campaignIds, { windowDays: attributionWindow, model: attributionModel }, startDate, endDate);
-        // Calculate flow revenues
         const flowRevenues = await Promise.all(flows.map(async (flow) => {
             const revenue = await calculateFlowRevenue(flow.id, { windowDays: attributionWindow, model: attributionModel }, startDate, endDate);
             return {
@@ -106,7 +89,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 aov: revenue.averageOrderValue,
             };
         }));
-        // Build campaign results
         const campaignResults = campaigns.map((campaign) => {
             const revenue = campaignRevenueMap.get(campaign.id);
             return {
@@ -118,7 +100,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 aov: revenue?.averageOrderValue || 0,
             };
         });
-        // Sort campaigns
         const sortedCampaigns = [...campaignResults].sort((a, b) => {
             if (sortBy === 'revenue')
                 return b.revenue - a.revenue;
@@ -126,7 +107,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 return b.orders - a.orders;
             return b.aov - a.aov;
         });
-        // Sort flows
         const sortedFlows = [...flowRevenues].sort((a, b) => {
             if (sortBy === 'revenue')
                 return b.revenue - a.revenue;
@@ -134,7 +114,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
                 return b.orders - a.orders;
             return b.aov - a.aov;
         });
-        // Calculate totals
         const totalCampaignRevenue = campaignResults.reduce((sum, c) => sum + c.revenue, 0);
         const totalFlowRevenue = flowRevenues.reduce((sum, f) => sum + f.revenue, 0);
         const totalCampaignOrders = campaignResults.reduce((sum, c) => sum + c.orders, 0);
@@ -142,7 +121,6 @@ export const getRevenueDashboardEndpoint = staffFactory.build({
         const totalRevenue = totalCampaignRevenue + totalFlowRevenue;
         const totalOrders = totalCampaignOrders + totalFlowOrders;
         const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-        // Calculate revenue by channel
         const emailRevenue = campaignResults
             .filter((c) => c.channel === 'email')
             .reduce((sum, c) => sum + c.revenue, 0);

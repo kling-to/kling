@@ -1,11 +1,5 @@
 import crypto from 'crypto';
 import twilio from 'twilio';
-/**
- * Twilio RCS provider for Rich Communication Services messaging.
- * RCS provides rich messaging features for Android devices.
- * Falls back to SMS when RCS is not available.
- * @see https://www.twilio.com/docs/messaging/rcs
- */
 export class TwilioRcsProvider {
     name = 'twilio_rcs';
     channel = 'rcs';
@@ -29,26 +23,18 @@ export class TwilioRcsProvider {
     }
     async send(message) {
         try {
-            // Build message options
-            // RCS messages are sent through Twilio's standard Messages API
-            // with special handling for rich content
             const messageOptions = {
                 to: message.to,
                 from: this.fromNumber,
                 body: message.body,
             };
-            // Add media if present in metadata
             if (message.metadata?.imageUrl) {
                 messageOptions.mediaUrl = [message.metadata.imageUrl];
             }
-            // Add status callback if configured
             if (message.metadata?.statusCallback) {
                 messageOptions.statusCallback = message.metadata.statusCallback;
             }
-            // Send via Twilio Messages API
-            // Twilio automatically attempts RCS first, then falls back to SMS
             const response = await this.client.messages.create(messageOptions);
-            // Check for error status
             if (response.errorCode) {
                 return {
                     success: false,
@@ -66,7 +52,6 @@ export class TwilioRcsProvider {
                     direction: response.direction,
                     price: response.price,
                     priceUnit: response.priceUnit,
-                    // Indicates if RCS or SMS was used
                     messagingServiceSid: response.messagingServiceSid,
                 },
             };
@@ -82,32 +67,24 @@ export class TwilioRcsProvider {
         }
     }
     isRetryableErrorCode(errorCode) {
-        // Twilio error codes that are typically retryable
         const retryableCodes = [
-            20429, // Too many requests
-            30001, // Queue overflow
-            30003, // Unreachable destination
+            20429,
+            30001,
+            30003,
         ];
         return retryableCodes.includes(errorCode);
     }
     isRetryableError(error) {
-        // Rate limiting
         if (error.status === 429)
             return true;
         if (error.code === 20429)
             return true;
-        // Server errors
         if (error.status && error.status >= 500)
             return true;
-        // Specific retryable error codes
         if (error.code && this.isRetryableErrorCode(error.code))
             return true;
         return false;
     }
-    /**
-     * Verify Twilio webhook signature.
-     * @see https://www.twilio.com/docs/usage/webhooks/webhooks-security
-     */
     verifyWebhook(payload, signatureData) {
         if (!this.authToken) {
             console.warn('[TwilioRcsProvider] No auth token configured, skipping verification');
@@ -137,7 +114,6 @@ export class TwilioRcsProvider {
             if (url) {
                 return twilio.validateRequest(this.authToken, twilioSignature, url, params);
             }
-            // Fallback: Manual validation without URL
             console.warn('[TwilioRcsProvider] URL not provided, using partial signature verification');
             const sortedParams = Object.keys(params)
                 .sort()
@@ -158,19 +134,17 @@ export class TwilioRcsProvider {
         const data = payload;
         if (!data)
             return null;
-        // Twilio webhook payload fields
         const messageSid = data.MessageSid || data.SmsSid || data.SmsMessageSid;
         const messageStatus = data.MessageStatus || data.SmsStatus;
         if (!messageSid || !messageStatus) {
             return null;
         }
-        // Map Twilio status to our event types
         const statusMap = {
             queued: 'delivered',
             sending: 'delivered',
             sent: 'delivered',
             delivered: 'delivered',
-            read: 'opened', // RCS supports read receipts
+            read: 'opened',
             failed: 'failed',
             undelivered: 'bounced',
             canceled: 'failed',

@@ -1,36 +1,23 @@
-/**
- * Auto-tune Rules
- *
- * Automatically pauses low-performing campaigns based on configurable thresholds.
- * This helps optimize marketing spend by stopping campaigns that aren't performing well.
- */
 import prisma from './prisma';
 import { pauseCampaignSchedule } from './bullmq';
 import { createAuditLog, AuditActions } from './audit';
-/**
- * Default auto-tune configuration
- */
 export const DEFAULT_AUTO_TUNE_CONFIG = {
     enabled: true,
     minExecutions: 3,
     minMessagesSent: 50,
     thresholds: {
-        minDeliveryRate: 0.5, // 50% delivery rate
-        minOpenRate: 0.05, // 5% open rate
-        minClickRate: 0.005, // 0.5% click rate
-        maxBounceRate: 0.1, // 10% bounce rate
-        maxComplaintRate: 0.001, // 0.1% complaint rate
-        maxFailureRate: 0.3, // 30% failure rate
+        minDeliveryRate: 0.5,
+        minOpenRate: 0.05,
+        minClickRate: 0.005,
+        maxBounceRate: 0.1,
+        maxComplaintRate: 0.001,
+        maxFailureRate: 0.3,
     },
     evaluationWindowDays: 7,
 };
-/**
- * Get campaign performance metrics within the evaluation window
- */
 export async function getCampaignPerformance(campaignId, windowDays = 7) {
     const windowStart = new Date();
     windowStart.setDate(windowStart.getDate() - windowDays);
-    // Get campaign details
     const campaign = await prisma.campaignDefinition.findUnique({
         where: { id: campaignId },
         select: {
@@ -42,7 +29,6 @@ export async function getCampaignPerformance(campaignId, windowDays = 7) {
     if (!campaign) {
         return null;
     }
-    // Get execution stats
     const executions = await prisma.campaignExecution.findMany({
         where: {
             campaignId,
@@ -54,7 +40,6 @@ export async function getCampaignPerformance(campaignId, windowDays = 7) {
             messagesFailed: true,
         },
     });
-    // Get message log stats
     const messageStats = await prisma.messageLog.groupBy({
         by: ['deliveryStatus'],
         where: {
@@ -63,7 +48,6 @@ export async function getCampaignPerformance(campaignId, windowDays = 7) {
         },
         _count: true,
     });
-    // Aggregate stats
     const stats = {
         sent: 0,
         delivered: 0,
@@ -128,12 +112,8 @@ export async function getCampaignPerformance(campaignId, windowDays = 7) {
         failureRate: totalSent > 0 ? stats.failed / totalSent : 0,
     };
 }
-/**
- * Evaluate whether a campaign should be paused based on auto-tune rules
- */
 export function evaluateCampaign(metrics, config) {
     const reasons = [];
-    // Check if we have enough data to evaluate
     if (metrics.executionCount < config.minExecutions) {
         return {
             campaignId: metrics.campaignId,
@@ -150,7 +130,6 @@ export function evaluateCampaign(metrics, config) {
             metrics,
         };
     }
-    // Evaluate thresholds
     if (metrics.deliveryRate < config.thresholds.minDeliveryRate) {
         reasons.push(`Low delivery rate: ${(metrics.deliveryRate * 100).toFixed(1)}% < ${(config.thresholds.minDeliveryRate * 100).toFixed(1)}%`);
     }
@@ -163,7 +142,6 @@ export function evaluateCampaign(metrics, config) {
     if (metrics.failureRate > config.thresholds.maxFailureRate) {
         reasons.push(`High failure rate: ${(metrics.failureRate * 100).toFixed(1)}% > ${(config.thresholds.maxFailureRate * 100).toFixed(1)}%`);
     }
-    // Email-specific metrics
     if (metrics.channel === 'email') {
         if (metrics.openRate < config.thresholds.minOpenRate && metrics.totalDelivered > 0) {
             reasons.push(`Low open rate: ${(metrics.openRate * 100).toFixed(1)}% < ${(config.thresholds.minOpenRate * 100).toFixed(1)}%`);
@@ -179,9 +157,6 @@ export function evaluateCampaign(metrics, config) {
         metrics,
     };
 }
-/**
- * Run auto-tune evaluation for a specific campaign
- */
 export async function autoTuneCampaign(campaignId, config = DEFAULT_AUTO_TUNE_CONFIG) {
     if (!config.enabled) {
         return null;
@@ -193,7 +168,6 @@ export async function autoTuneCampaign(campaignId, config = DEFAULT_AUTO_TUNE_CO
     const result = evaluateCampaign(metrics, config);
     if (result.shouldPause) {
         console.log(`[AutoTune] Campaign ${campaignId} flagged for pause: ${result.reasons.join(', ')}`);
-        // Pause the campaign - need to get the bullmqJobKey first
         try {
             const campaign = await prisma.campaignDefinition.findUnique({
                 where: { id: campaignId },
@@ -204,7 +178,6 @@ export async function autoTuneCampaign(campaignId, config = DEFAULT_AUTO_TUNE_CO
                 where: { id: campaignId },
                 data: { status: 'paused' },
             });
-            // Create audit log
             await createAuditLog({
                 action: AuditActions.campaign.paused,
                 resourceType: 'campaign',
@@ -231,9 +204,6 @@ export async function autoTuneCampaign(campaignId, config = DEFAULT_AUTO_TUNE_CO
     }
     return result;
 }
-/**
- * Run auto-tune evaluation for all active campaigns
- */
 export async function autoTuneActiveCampaigns(config = DEFAULT_AUTO_TUNE_CONFIG) {
     if (!config.enabled) {
         return [];
@@ -253,9 +223,6 @@ export async function autoTuneActiveCampaigns(config = DEFAULT_AUTO_TUNE_CONFIG)
     }
     return results;
 }
-/**
- * Run auto-tune evaluation for all active campaigns system-wide
- */
 export async function autoTuneAllCampaigns(config = DEFAULT_AUTO_TUNE_CONFIG) {
     if (!config.enabled) {
         return { evaluated: 0, paused: 0, results: [] };

@@ -1,7 +1,3 @@
-/**
- * BigCommerce Platform Adapter
- * Handles OAuth and data sync for BigCommerce stores
- */
 const BIGCOMMERCE_WEBHOOK_SCOPES = [
     'store/customer/created',
     'store/customer/updated',
@@ -17,9 +13,6 @@ export class BigCommerceAdapter {
     constructor(config) {
         this.config = config;
     }
-    /**
-     * Generate OAuth authorization URL
-     */
     getAuthUrl(_storeHash, redirectUri, state) {
         const scopes = this.config.scopes.join(' ');
         return (`https://login.bigcommerce.com/oauth2/authorize?` +
@@ -29,9 +22,6 @@ export class BigCommerceAdapter {
             `&response_type=code` +
             `&state=${state}`);
     }
-    /**
-     * Exchange authorization code for access token
-     */
     async exchangeCodeForToken(storeHash, code, redirectUri) {
         const response = await fetch('https://login.bigcommerce.com/oauth2/token', {
             method: 'POST',
@@ -54,9 +44,6 @@ export class BigCommerceAdapter {
             scopes: data.scope.split(' '),
         };
     }
-    /**
-     * Register webhooks with BigCommerce
-     */
     async registerWebhooks(storeHash, accessToken, callbackUrl) {
         const webhookIds = [];
         for (const scope of BIGCOMMERCE_WEBHOOK_SCOPES) {
@@ -85,9 +72,6 @@ export class BigCommerceAdapter {
         }
         return webhookIds;
     }
-    /**
-     * Unregister webhooks
-     */
     async unregisterWebhooks(storeHash, accessToken, webhookIds) {
         for (const webhookId of webhookIds) {
             try {
@@ -101,18 +85,9 @@ export class BigCommerceAdapter {
             }
         }
     }
-    /**
-     * Verify webhook - BigCommerce uses shared secret in payload
-     * Note: BigCommerce webhooks don't use HMAC signature verification.
-     * Verification is done via the registered callback URL.
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     verifyWebhook(rawBody, signature, secret) {
         return true;
     }
-    /**
-     * Fetch customers from BigCommerce
-     */
     async fetchCustomers(storeHash, accessToken, cursor) {
         const page = cursor ? parseInt(cursor, 10) : 1;
         const limit = 250;
@@ -128,9 +103,6 @@ export class BigCommerceAdapter {
             cursor: hasMore ? String(page + 1) : undefined,
         };
     }
-    /**
-     * Fetch orders from BigCommerce
-     */
     async fetchOrders(storeHash, accessToken, cursor, sinceDate) {
         const page = cursor ? parseInt(cursor, 10) : 1;
         const limit = 250;
@@ -145,7 +117,6 @@ export class BigCommerceAdapter {
             throw new Error(`Failed to fetch orders: ${await response.text()}`);
         }
         const orders = (await response.json());
-        // Fetch line items for each order
         const ordersWithItems = [];
         for (const order of orders) {
             if (order.customer_id && order.products?.url) {
@@ -159,11 +130,9 @@ export class BigCommerceAdapter {
                     }
                 }
                 catch {
-                    // Skip order if can't fetch products
                 }
             }
         }
-        // Check if there's a next page (BigCommerce v2 uses Link header)
         const hasMore = orders.length === limit;
         return {
             data: ordersWithItems,
@@ -171,21 +140,13 @@ export class BigCommerceAdapter {
             cursor: hasMore ? String(page + 1) : undefined,
         };
     }
-    /**
-     * Parse webhook payload
-     */
     parseWebhookPayload(topic, payload) {
         const data = payload;
         if (topic.includes('customer') && !topic.includes('deleted') && data.data) {
             return this.mapCustomer(data.data);
         }
-        // Orders require additional API call to get line items, so return null
-        // and let the endpoint handle fetching the full order
         return null;
     }
-    // ------------------------------------------------------
-    // Private helper methods
-    // ------------------------------------------------------
     mapCustomer(c) {
         const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
         return {
@@ -205,12 +166,10 @@ export class BigCommerceAdapter {
     }
     mapOrder(o, products) {
         let status = 'completed';
-        // BigCommerce status_ids: 0=Incomplete, 1=Pending, 2=Shipped, etc.
         if (o.status_id <= 1) {
             status = 'pending';
         }
         else if (o.status_id === 4 || o.status_id === 6) {
-            // 4=Refunded, 6=Cancelled
             status = o.status_id === 4 ? 'refunded' : 'cancelled';
         }
         return {
@@ -219,7 +178,7 @@ export class BigCommerceAdapter {
             total: parseFloat(o.total_inc_tax),
             currency: o.currency_code,
             status,
-            couponCode: null, // Would need to fetch from coupons URL
+            couponCode: null,
             items: products.map((p) => ({
                 sku: p.sku || `bc-${p.product_id}`,
                 name: p.name,
@@ -232,9 +191,6 @@ export class BigCommerceAdapter {
         };
     }
 }
-/**
- * Create BigCommerce adapter
- */
 export function createBigCommerceAdapter(config) {
     return new BigCommerceAdapter({
         platform: 'BIGCOMMERCE',

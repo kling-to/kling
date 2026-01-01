@@ -2,10 +2,6 @@ import { z } from 'zod';
 import { publicFactory, publicWithRequestFactory } from '../factories';
 import prisma from '../utils/prisma';
 import { providerRegistry } from '../providers';
-/**
- * Generic delivery webhook endpoint.
- * Handles callbacks from email/SMS providers about message status.
- */
 export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
     method: 'post',
     shortDescription: 'Delivery Webhook',
@@ -21,7 +17,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
     }),
     handler: async ({ input, ctx }) => {
         const { provider: providerName } = input;
-        // Get provider
         const provider = providerRegistry.get(providerName);
         if (!provider) {
             return {
@@ -30,13 +25,10 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 error: `Unknown provider: ${providerName}`,
             };
         }
-        // Get signature from headers
         const signature = ctx.request.headers['x-signature'] ||
             ctx.request.headers['x-webhook-signature'] ||
             '';
-        // Get raw body (would need body-parser raw mode in production)
         const rawBody = JSON.stringify(ctx.request.body);
-        // Verify signature
         if (signature && !provider.verifyWebhook(rawBody, signature)) {
             return {
                 received: true,
@@ -44,7 +36,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 error: 'Invalid signature',
             };
         }
-        // Parse webhook event
         const event = provider.parseWebhook(ctx.request.body);
         if (!event) {
             return {
@@ -53,19 +44,16 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 error: 'Could not parse webhook payload',
             };
         }
-        // Find message log by provider message ID
         const messageLog = await prisma.messageLog.findFirst({
             where: { providerMessageId: event.providerMessageId },
         });
         if (!messageLog) {
-            // Message not found - could be a test or old message
             return {
                 received: true,
                 processed: false,
                 error: 'Message not found',
             };
         }
-        // Update message log based on event type
         const updateData = {};
         switch (event.eventType) {
             case 'delivered':
@@ -75,7 +63,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
             case 'bounced':
                 updateData.deliveryStatus = 'bounced';
                 updateData.errorMessage = 'Message bounced';
-                // Add to suppression list
                 if (messageLog.channel === 'email') {
                     const customer = await prisma.customer.findUnique({
                         where: { id: messageLog.customerId },
@@ -111,7 +98,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 break;
             case 'unsubscribed':
                 updateData.deliveryStatus = 'unsubscribed';
-                // Update customer opt-out
                 await prisma.customer.update({
                     where: { id: messageLog.customerId },
                     data: {
@@ -122,7 +108,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 break;
             case 'complained': {
                 updateData.deliveryStatus = 'complained';
-                // Add to global suppression
                 const complainCustomer = await prisma.customer.findUnique({
                     where: { id: messageLog.customerId },
                 });
@@ -152,7 +137,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
                 updateData.errorMessage = event.metadata?.error || 'Delivery failed';
                 break;
         }
-        // Update message log
         await prisma.messageLog.update({
             where: { id: messageLog.id },
             data: updateData,
@@ -163,10 +147,6 @@ export const deliveryWebhookEndpoint = publicWithRequestFactory.build({
         };
     },
 });
-/**
- * Order webhook endpoint.
- * Handles incoming order notifications from e-commerce platforms.
- */
 export const orderWebhookEndpoint = publicFactory.build({
     method: 'post',
     shortDescription: 'Order Webhook',
@@ -198,7 +178,6 @@ export const orderWebhookEndpoint = publicFactory.build({
     handler: async ({ input }) => {
         const { total, items, idempotencyKey } = input;
         const purchasedAt = input.purchasedAt ? new Date(input.purchasedAt) : new Date();
-        // Check idempotency via external order ID
         if (idempotencyKey) {
             const existingOrder = await prisma.order.findFirst({
                 where: {},
@@ -211,7 +190,6 @@ export const orderWebhookEndpoint = publicFactory.build({
                 };
             }
         }
-        // Find or create customer
         let customer = null;
         if (input.customerId) {
             customer = await prisma.customer.findUnique({
@@ -228,7 +206,6 @@ export const orderWebhookEndpoint = publicFactory.build({
                 where: { externalId: input.customerExternalId },
             });
         }
-        // Create customer if not found
         if (!customer) {
             if (!input.customerEmail && !input.customerExternalId) {
                 return {
@@ -244,7 +221,6 @@ export const orderWebhookEndpoint = publicFactory.build({
                 },
             });
         }
-        // Create order with items
         const order = await prisma.order.create({
             data: {
                 customerId: customer.id,
@@ -263,7 +239,6 @@ export const orderWebhookEndpoint = publicFactory.build({
                     : undefined,
             },
         });
-        // Update customer stats
         await prisma.customer.update({
             where: { id: customer.id },
             data: {
@@ -272,7 +247,6 @@ export const orderWebhookEndpoint = publicFactory.build({
                 totalSpent: { increment: total },
             },
         });
-        // Create customer event
         await prisma.customerEvent.create({
             data: {
                 customerId: customer.id,

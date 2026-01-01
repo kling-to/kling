@@ -1,18 +1,8 @@
-/**
- * Query Aggregator
- *
- * Provides aggregation-based customer queries using MongoDB's aggregation pipeline.
- * Supports complex queries like "favorite category", "most purchased brand", etc.
- */
 import prisma from './prisma';
-/**
- * Get customers by their favorite (most purchased) category
- */
 export async function getCustomersByFavoriteCategory(category, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
     const pipeline = [
-        // Lookup order items
         {
             $lookup: {
                 from: 'OrderItem',
@@ -21,18 +11,14 @@ export async function getCustomersByFavoriteCategory(category, options = {}) {
                 as: 'items',
             },
         },
-        // Unwind items
         { $unwind: '$items' },
-        // Group by customer and category to count
         {
             $group: {
                 _id: { customerId: '$customerId', category: '$items.category' },
                 count: { $sum: '$items.quantity' },
             },
         },
-        // Sort by count descending to find favorite
         { $sort: { '_id.customerId': 1, count: -1 } },
-        // Group by customer to get top category
         {
             $group: {
                 _id: '$_id.customerId',
@@ -40,14 +26,12 @@ export async function getCustomersByFavoriteCategory(category, options = {}) {
                 maxCount: { $first: '$count' },
             },
         },
-        // Filter by the requested category
         {
             $match: {
                 favoriteCategory: { $regex: `^${escapeRegex(category)}$`, $options: 'i' },
             },
         },
     ];
-    // First, count total matches
     const countPipeline = [...pipeline, { $count: 'total' }];
     const countResult = await prisma.$runCommandRaw({
         aggregate: 'Order',
@@ -59,7 +43,6 @@ export async function getCustomersByFavoriteCategory(category, options = {}) {
     if (totalMatches === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Add pagination to pipeline (optimization: limit IDs extracted)
     const paginatedPipeline = [
         ...pipeline,
         { $sort: { _id: 1 } },
@@ -71,13 +54,11 @@ export async function getCustomersByFavoriteCategory(category, options = {}) {
         pipeline: paginatedPipeline,
         cursor: {},
     });
-    // Extract customer IDs from aggregation result
     const aggResult = result;
     const customerIds = aggResult.cursor.firstBatch.map((r) => r._id.$oid || r._id.toString());
     if (customerIds.length === 0) {
         return { customers: [], total: totalMatches, hasMore: false };
     }
-    // Fetch full customer data
     const whereClause = {
         id: { in: customerIds },
     };
@@ -106,9 +87,6 @@ export async function getCustomersByFavoriteCategory(category, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by their favorite (most purchased) brand
- */
 export async function getCustomersByFavoriteBrand(brand, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -187,9 +165,6 @@ export async function getCustomersByFavoriteBrand(brand, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers who have purchased a specific category at least N times
- */
 export async function getCustomersByCategoryPurchaseCount(category, minCount, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -255,7 +230,6 @@ export async function getCustomersByCategoryPurchaseCount(category, minCount, op
     const hasMore = customers.length > pageSize;
     if (hasMore)
         customers.pop();
-    // Create lookup for category counts
     const countLookup = new Map(customerData.map((r) => [r._id.$oid || r._id.toString(), r.categoryCount]));
     return {
         customers: customers.map((c) => ({
@@ -266,9 +240,6 @@ export async function getCustomersByCategoryPurchaseCount(category, minCount, op
         hasMore,
     };
 }
-/**
- * Get customers by average order value
- */
 export async function getCustomersByAvgOrderValue(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -333,9 +304,6 @@ export async function getCustomersByAvgOrderValue(operator, value, options = {})
         hasMore,
     };
 }
-/**
- * Get customers who last purchased from a specific category
- */
 export async function getCustomersByLastPurchasedCategory(category, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -407,15 +375,9 @@ export async function getCustomersByLastPurchasedCategory(category, options = {}
         hasMore,
     };
 }
-/**
- * Escape special regex characters in a string
- */
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-/**
- * Helper to fetch customers by IDs with standard options
- */
 async function fetchCustomersByIds(customerIds, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -452,9 +414,6 @@ async function fetchCustomersByIds(customerIds, options = {}) {
         customers.pop();
     return { customers, total, hasMore };
 }
-/**
- * Get customers by total orders count
- */
 export async function getCustomersByTotalOrders(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -462,7 +421,6 @@ export async function getCustomersByTotalOrders(operator, value, options = {}) {
     if (excludeOptedOut) {
         whereClause.optOut = false;
     }
-    // Map operator to Prisma format
     const prismaOp = {};
     if (operator === 'eq') {
         prismaOp.equals = value;
@@ -499,9 +457,6 @@ export async function getCustomersByTotalOrders(operator, value, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by total spend (lifetime value)
- */
 export async function getCustomersByTotalSpend(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -545,9 +500,6 @@ export async function getCustomersByTotalSpend(operator, value, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by recency (days since last purchase)
- */
 export async function getCustomersByRecencyDays(operator, days, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -559,8 +511,6 @@ export async function getCustomersByRecencyDays(operator, days, options = {}) {
     if (excludeOptedOut) {
         whereClause.optOut = false;
     }
-    // Invert operator for date comparison (more days ago = earlier date)
-    // "recency >= 30 days" means "lastOrderAt <= 30 days ago"
     const dateOp = {};
     if (operator === 'gte') {
         dateOp.lte = targetDate;
@@ -610,9 +560,6 @@ export async function getCustomersByRecencyDays(operator, days, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by average items per order
- */
 export async function getCustomersByAvgItemsPerOrder(operator, value, options = {}) {
     const matchOp = {};
     matchOp[`$${operator}`] = value;
@@ -659,9 +606,6 @@ export async function getCustomersByAvgItemsPerOrder(operator, value, options = 
         hasMore,
     };
 }
-/**
- * Get customers by average days between purchases
- */
 export async function getCustomersByAvgDaysBetweenPurchases(operator, days, options = {}) {
     const matchOp = {};
     matchOp[`$${operator}`] = days;
@@ -674,7 +618,7 @@ export async function getCustomersByAvgDaysBetweenPurchases(operator, days, opti
                 orderCount: { $sum: 1 },
             },
         },
-        { $match: { orderCount: { $gte: 2 } } }, // Need at least 2 orders to calculate gap
+        { $match: { orderCount: { $gte: 2 } } },
         {
             $project: {
                 orderCount: 1,
@@ -714,9 +658,6 @@ export async function getCustomersByAvgDaysBetweenPurchases(operator, days, opti
         hasMore,
     };
 }
-/**
- * Get customers by first purchase date
- */
 export async function getCustomersByFirstPurchaseDate(operator, date, options = {}) {
     const targetDate = new Date(date);
     const matchOp = {};
@@ -753,9 +694,6 @@ export async function getCustomersByFirstPurchaseDate(operator, date, options = 
         hasMore,
     };
 }
-/**
- * Get customers by last purchase date
- */
 export async function getCustomersByLastPurchaseDate(operator, date, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -800,9 +738,6 @@ export async function getCustomersByLastPurchaseDate(operator, date, options = {
         hasMore,
     };
 }
-/**
- * Get customers by distinct categories purchased count
- */
 export async function getCustomersByDistinctCategoriesCount(operator, count, options = {}) {
     const matchOp = {};
     if (operator === 'eq') {
@@ -853,11 +788,7 @@ export async function getCustomersByDistinctCategoriesCount(operator, count, opt
         hasMore,
     };
 }
-/**
- * Get customers by lifetime value (alias for total_spend with additional computed fields)
- */
 export async function getCustomersByLifetimeValue(operator, value, options = {}) {
-    // Lifetime value uses totalSpent as the primary metric
     const result = await getCustomersByTotalSpend(operator, value, options);
     return {
         ...result,
@@ -867,33 +798,23 @@ export async function getCustomersByLifetimeValue(operator, value, options = {})
         })),
     };
 }
-/**
- * Get customers by churn risk score (based on recency and frequency)
- * Score: 0-100, higher = more likely to churn
- * Formula: (days_since_last_order / 90) * 50 + (1 - min(orders/10, 1)) * 50
- */
 export async function getCustomersByChurnRiskScore(operator, score, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
-    // Map operator to MongoDB operator
     const mongoOperator = {
         gte: '$gte',
         lte: '$lte',
         gt: '$gt',
         lt: '$lt',
     }[operator];
-    // Build match conditions
     const matchConditions = {
         totalOrders: { $gte: 1 },
     };
     if (excludeOptedOut) {
         matchConditions.optOut = false;
     }
-    // Use MongoDB aggregation pipeline to calculate churn risk score in database
     const pipeline = [
-        // Match customers with orders
         { $match: matchConditions },
-        // Calculate days since last order using $$NOW for current date
         {
             $addFields: {
                 daysSinceLastOrder: {
@@ -907,7 +828,6 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
                 },
             },
         },
-        // Calculate recency score (capped at 90 days = 50 points)
         {
             $addFields: {
                 recencyScore: {
@@ -915,7 +835,6 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
                 },
             },
         },
-        // Calculate frequency score (fewer orders = higher risk, capped at 10 orders = 0 points)
         {
             $addFields: {
                 frequencyScore: {
@@ -923,7 +842,6 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
                 },
             },
         },
-        // Calculate final churn risk score
         {
             $addFields: {
                 churnRiskScore: {
@@ -931,12 +849,9 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
                 },
             },
         },
-        // Filter by score
         { $match: { churnRiskScore: { [mongoOperator]: score } } },
-        // Sort for consistent pagination
         { $sort: { churnRiskScore: -1, _id: 1 } },
     ];
-    // First, count total matches with a separate aggregation
     const countPipeline = [...pipeline, { $count: 'total' }];
     const countResult = await prisma.$runCommandRaw({
         aggregate: 'Customer',
@@ -948,12 +863,10 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
     if (total === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Add pagination to main pipeline
     const paginatedPipeline = [
         ...pipeline,
         { $skip: skip },
         { $limit: pageSize + 1 },
-        // Project only needed fields
         {
             $project: {
                 _id: 1,
@@ -996,9 +909,6 @@ export async function getCustomersByChurnRiskScore(operator, score, options = {}
         hasMore,
     };
 }
-/**
- * Get customers by purchase frequency (orders per month)
- */
 export async function getCustomersByPurchaseFrequency(operator, ordersPerMonth, options = {}) {
     const pipeline = [
         { $sort: { customerId: 1, purchasedAt: 1 } },
@@ -1020,7 +930,7 @@ export async function getCustomersByPurchaseFrequency(operator, ordersPerMonth, 
                         {
                             $divide: [
                                 { $subtract: ['$lastOrder', '$firstOrder'] },
-                                { $multiply: [1000, 60, 60, 24, 30] }, // ms per month (approx)
+                                { $multiply: [1000, 60, 60, 24, 30] },
                             ],
                         },
                     ],
@@ -1058,9 +968,6 @@ export async function getCustomersByPurchaseFrequency(operator, ordersPerMonth, 
         hasMore,
     };
 }
-/**
- * Get customers by top SKU (most purchased SKU)
- */
 export async function getCustomersByTopSku(sku, options = {}) {
     const pipeline = [
         {
@@ -1106,9 +1013,6 @@ export async function getCustomersByTopSku(sku, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by brand purchase count (number of times purchased from a brand)
- */
 export async function getCustomersByBrandCount(brand, minCount, options = {}) {
     const pipeline = [
         {
@@ -1152,12 +1056,7 @@ export async function getCustomersByBrandCount(brand, minCount, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by median order value
- * Calculates the median of all order totals for each customer
- */
 export async function getCustomersByMedianOrderValue(operator, value, options = {}) {
-    // Get all orders grouped by customer
     const pipeline = [
         { $sort: { customerId: 1, total: 1 } },
         {
@@ -1175,7 +1074,6 @@ export async function getCustomersByMedianOrderValue(operator, value, options = 
         cursor: {},
     });
     const aggResult = result;
-    // Calculate median for each customer in JS (MongoDB aggregation for median is complex)
     const customersWithMedian = aggResult.cursor.firstBatch
         .map((r) => {
         const totals = r.orderTotals.sort((a, b) => a - b);
@@ -1212,12 +1110,7 @@ export async function getCustomersByMedianOrderValue(operator, value, options = 
         hasMore,
     };
 }
-/**
- * Get customers by their most active hour of the day
- * Returns customers who most frequently purchase during the specified hour (0-23)
- */
-export async function getCustomersByMostActiveHour(hour, // 0-23
-options = {}) {
+export async function getCustomersByMostActiveHour(hour, options = {}) {
     const pipeline = [
         {
             $group: {
@@ -1255,12 +1148,7 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by their most active day of the week
- * Returns customers who most frequently purchase on the specified day (1=Sunday, 7=Saturday)
- */
-export async function getCustomersByMostActiveDay(dayOfWeek, // 1=Sunday, 2=Monday, ..., 7=Saturday
-options = {}) {
+export async function getCustomersByMostActiveDay(dayOfWeek, options = {}) {
     const pipeline = [
         {
             $group: {
@@ -1308,12 +1196,7 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by coupon usage rate
- * Percentage of orders where a coupon was used
- */
-export async function getCustomersByCouponUsageRate(operator, rate, // 0-100 percentage
-options = {}) {
+export async function getCustomersByCouponUsageRate(operator, rate, options = {}) {
     const pipeline = [
         {
             $group: {
@@ -1362,12 +1245,7 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by refund rate
- * Percentage of orders that were refunded
- */
-export async function getCustomersByRefundRate(operator, rate, // 0-100 percentage
-options = {}) {
+export async function getCustomersByRefundRate(operator, rate, options = {}) {
     const pipeline = [
         {
             $group: {
@@ -1413,10 +1291,6 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by return/refund count
- * Number of refunded orders
- */
 export async function getCustomersByReturnCount(operator, count, options = {}) {
     const matchOp = {};
     if (operator === 'eq') {
@@ -1454,10 +1328,6 @@ export async function getCustomersByReturnCount(operator, count, options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by abandoned cart count
- * Uses CustomerEvent with eventType = 'cart_abandoned'
- */
 export async function getCustomersByAbandonedCartCount(operator, count, options = {}) {
     const matchOp = {};
     if (operator === 'eq') {
@@ -1495,12 +1365,7 @@ export async function getCustomersByAbandonedCartCount(operator, count, options 
         hasMore,
     };
 }
-/**
- * Get customers who are cross-sell candidates
- * Finds customers who bought from category A but not category B
- */
 export async function getCustomersByCrossSellCandidates(boughtCategory, notBoughtCategory, options = {}) {
-    // First, find customers who bought from the target category
     const boughtPipeline = [
         {
             $lookup: {
@@ -1531,7 +1396,6 @@ export async function getCustomersByCrossSellCandidates(boughtCategory, notBough
     if (boughtCustomers.size === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Find customers who bought from the "not bought" category
     const notBoughtPipeline = [
         {
             $lookup: {
@@ -1559,7 +1423,6 @@ export async function getCustomersByCrossSellCandidates(boughtCategory, notBough
         cursor: {},
     });
     const alreadyBoughtTarget = new Set(notBoughtResult.cursor.firstBatch.map((r) => r._id.$oid || r._id.toString()));
-    // Cross-sell candidates: bought category A but NOT category B
     const crossSellCandidates = [...boughtCustomers].filter((id) => !alreadyBoughtTarget.has(id));
     const { customers, total, hasMore } = await fetchCustomersByIds(crossSellCandidates, options);
     return {
@@ -1571,13 +1434,7 @@ export async function getCustomersByCrossSellCandidates(boughtCategory, notBough
         hasMore,
     };
 }
-/**
- * Get customers by upsell conversion rate
- * Based on experiment assignments where customer was in treatment group
- */
-export async function getCustomersByUpsellConversionRate(operator, rate, // 0-100 percentage
-options = {}) {
-    // Get experiment assignments
+export async function getCustomersByUpsellConversionRate(operator, rate, options = {}) {
     const pipeline = [
         {
             $lookup: {
@@ -1632,13 +1489,7 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by repeat purchase rate
- * Percentage of customers who made more than one purchase
- */
-export async function getCustomersByRepeatPurchaseRate(operator, minOrders, // Minimum orders to be considered "repeat"
-options = {}) {
-    // This returns customers who have made >= minOrders purchases (i.e., repeat customers)
+export async function getCustomersByRepeatPurchaseRate(operator, minOrders, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
     const whereClause = {
@@ -1678,18 +1529,10 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by retention (cohort-based)
- * Finds customers from a specific cohort (by first purchase date) who are still active
- */
-export async function getCustomersByRetentionRate(cohortStartDate, // e.g., "2024-01-01"
-cohortEndDate, // e.g., "2024-01-31"
-retentionDays, // Days after cohort to check for activity
-options = {}) {
+export async function getCustomersByRetentionRate(cohortStartDate, cohortEndDate, retentionDays, options = {}) {
     const cohortStart = new Date(cohortStartDate);
     const cohortEnd = new Date(cohortEndDate);
     const retentionCutoff = new Date(cohortEnd.getTime() + retentionDays * 24 * 60 * 60 * 1000);
-    // Find customers whose first purchase was in the cohort period
     const cohortPipeline = [
         { $sort: { purchasedAt: 1 } },
         {
@@ -1715,7 +1558,6 @@ options = {}) {
         cursor: {},
     });
     const aggResult = result;
-    // Filter for retained customers (had activity after retention period)
     const retainedCustomers = aggResult.cursor.firstBatch.filter((r) => {
         const lastPurchaseDate = typeof r.lastPurchase === 'object' && '$date' in r.lastPurchase
             ? new Date(r.lastPurchase.$date)
@@ -1738,9 +1580,6 @@ options = {}) {
         hasMore,
     };
 }
-/**
- * Get customers by preferred contact channel
- */
 export async function getCustomersByPreferredContactChannel(channel, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
@@ -1782,20 +1621,15 @@ export async function getCustomersByPreferredContactChannel(channel, options = {
         hasMore,
     };
 }
-/**
- * Get customers by predicted lifetime value (from CustomerPrediction model)
- */
 export async function getCustomersByPredictedLTV(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
-    // Build the where clause for CustomerPrediction
     const predictionWhere = {
         predictedLTV: { not: null },
     };
     const opMap = {};
     opMap[operator] = value;
     predictionWhere.predictedLTV = opMap;
-    // First, get customer IDs from predictions that match the criteria
     const predictions = await prisma.customerPrediction.findMany({
         where: predictionWhere,
         select: {
@@ -1807,7 +1641,6 @@ export async function getCustomersByPredictedLTV(operator, value, options = {}) 
     if (customerIds.length === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Build customer where clause
     const customerWhere = {
         id: { in: customerIds },
     };
@@ -1836,7 +1669,6 @@ export async function getCustomersByPredictedLTV(operator, value, options = {}) 
     const hasMore = customers.length > pageSize;
     if (hasMore)
         customers.pop();
-    // Create lookup for predicted LTV values
     const ltvLookup = new Map(predictions.map((p) => [p.customerId, p.predictedLTV]));
     return {
         customers: customers.map((c) => ({
@@ -1847,20 +1679,15 @@ export async function getCustomersByPredictedLTV(operator, value, options = {}) 
         hasMore,
     };
 }
-/**
- * Get customers by engagement score (from CustomerPrediction model)
- */
 export async function getCustomersByEngagementScore(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
-    // Build the where clause for CustomerPrediction
     const predictionWhere = {
         engagementScore: { not: null },
     };
     const opMap = {};
     opMap[operator] = value;
     predictionWhere.engagementScore = opMap;
-    // First, get customer IDs from predictions that match the criteria
     const predictions = await prisma.customerPrediction.findMany({
         where: predictionWhere,
         select: {
@@ -1872,7 +1699,6 @@ export async function getCustomersByEngagementScore(operator, value, options = {
     if (customerIds.length === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Build customer where clause
     const customerWhere = {
         id: { in: customerIds },
     };
@@ -1901,7 +1727,6 @@ export async function getCustomersByEngagementScore(operator, value, options = {
     const hasMore = customers.length > pageSize;
     if (hasMore)
         customers.pop();
-    // Create lookup for engagement score values
     const scoreLookup = new Map(predictions.map((p) => [p.customerId, p.engagementScore]));
     return {
         customers: customers.map((c) => ({
@@ -1912,20 +1737,15 @@ export async function getCustomersByEngagementScore(operator, value, options = {
         hasMore,
     };
 }
-/**
- * Get customers by predicted churn risk (from CustomerPrediction model)
- */
 export async function getCustomersByPredictedChurnRisk(operator, value, options = {}) {
     const { page = 1, pageSize = 100, excludeOptedOut = true } = options;
     const skip = (page - 1) * pageSize;
-    // Build the where clause for CustomerPrediction
     const predictionWhere = {
         churnRiskScore: { not: null },
     };
     const opMap = {};
     opMap[operator] = value;
     predictionWhere.churnRiskScore = opMap;
-    // First, get customer IDs from predictions that match the criteria
     const predictions = await prisma.customerPrediction.findMany({
         where: predictionWhere,
         select: {
@@ -1937,7 +1757,6 @@ export async function getCustomersByPredictedChurnRisk(operator, value, options 
     if (customerIds.length === 0) {
         return { customers: [], total: 0, hasMore: false };
     }
-    // Build customer where clause
     const customerWhere = {
         id: { in: customerIds },
     };
@@ -1966,7 +1785,6 @@ export async function getCustomersByPredictedChurnRisk(operator, value, options 
     const hasMore = customers.length > pageSize;
     if (hasMore)
         customers.pop();
-    // Create lookup for churn risk values
     const riskLookup = new Map(predictions.map((p) => [p.customerId, p.churnRiskScore]));
     return {
         customers: customers.map((c) => ({
@@ -1977,9 +1795,6 @@ export async function getCustomersByPredictedChurnRisk(operator, value, options 
         hasMore,
     };
 }
-/**
- * Execute an aggregation query based on DSL
- */
 export async function executeAggregationQuery(dsl, options = {}) {
     const { aggregation } = dsl;
     switch (aggregation.type) {
@@ -2140,7 +1955,6 @@ export async function executeAggregationQuery(dsl, options = {}) {
                 throw new Error('repeat_purchase_rate requires numeric value (min orders)');
             return getCustomersByRepeatPurchaseRate(aggregation.operator, aggregation.value, options);
         case 'retention_rate': {
-            // For retention_rate, field contains "cohortStart,cohortEnd,retentionDays"
             if (!aggregation.field)
                 throw new Error('retention_rate requires field (cohortStart,cohortEnd,retentionDays)');
             const [cohortStart, cohortEnd, retentionDaysStr] = aggregation.field.split(',');
