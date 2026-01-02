@@ -8,6 +8,11 @@ import path from 'path';
 import createHttpError from 'http-errors';
 const GITHUB_REPO = 'kling-to/kling';
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}`;
+const RELEASES_CACHE_TTL = 15 * 60 * 1000;
+let releasesCache = {
+    data: null,
+    timestamp: 0,
+};
 function getCurrentVersion() {
     try {
         const packagePath = path.join(process.cwd(), 'package.json');
@@ -89,14 +94,36 @@ async function getTagCommitSha(tag) {
     }
 }
 async function fetchGitHubReleases() {
-    const response = await fetch(`${GITHUB_API}/releases`, {
-        headers: {
-            Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'Kling-Update-Service',
-        },
-    });
+    const now = Date.now();
+    const cacheAge = now - releasesCache.timestamp;
+    if (releasesCache.data && cacheAge < RELEASES_CACHE_TTL) {
+        console.log(`[Updates] Using cached releases data (age: ${Math.round(cacheAge / 1000)}s)`);
+        return releasesCache.data;
+    }
+    console.log('[Updates] Fetching releases from GitHub API...');
+    const githubToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    const headers = {
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'Kling-Update-Service',
+    };
+    if (githubToken) {
+        headers.Authorization = `Bearer ${githubToken}`;
+    }
+    const response = await fetch(`${GITHUB_API}/releases`, { headers });
     if (!response.ok) {
-        throw createHttpError(502, 'Failed to fetch releases from GitHub');
+        if (response.status === 403 || response.status === 429) {
+            const resetTime = response.headers.get('X-RateLimit-Reset');
+            const resetDate = resetTime ? new Date(parseInt(resetTime) * 1000) : null;
+            const waitMinutes = resetDate
+                ? Math.ceil((resetDate.getTime() - now) / 60000)
+                : 'unknown';
+            if (releasesCache.data) {
+                console.warn(`[Updates] Rate limited, using stale cache (${Math.round(cacheAge / 1000)}s old)`);
+                return releasesCache.data;
+            }
+            throw createHttpError(429, `GitHub API rate limit exceeded. ${githubToken ? 'Authenticated limit reached.' : 'Set GITHUB_TOKEN for higher limits.'} Try again in ${waitMinutes} minutes.`);
+        }
+        throw createHttpError(502, `Failed to fetch releases from GitHub: ${response.statusText}`);
     }
     const releases = (await response.json());
     const publishedReleases = releases.filter((r) => !r.draft && !r.prerelease);
@@ -126,7 +153,13 @@ async function fetchGitHubReleases() {
             sha,
         };
     }));
-    return { latest, versions };
+    const result = { latest, versions };
+    releasesCache = {
+        data: result,
+        timestamp: now,
+    };
+    console.log(`[Updates] Cached ${versions.length} releases`);
+    return result;
 }
 const versionInfoSchema = z.object({
     version: z.string(),
@@ -248,18 +281,20 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
             metadata: { targetVersion: resolvedVersion, skipBackup },
             context: extractAuditContext(ctx.request, ctx.user),
         });
-        const { queueUpdateJob } = await import('../utils/bullmq/update-worker');
-        const jobId = await queueUpdateJob({
+        const { executeUpdateNow } = await import('../utils/update-executor');
+        executeUpdateNow({
             version: resolvedVersion,
             userId: ctx.user.sub,
-            skipBackup,
+            skipBackup: skipBackup || false,
             isRollback: false,
+        }).catch((err) => {
+            console.error('[UpdateEndpoint] Update failed:', err);
         });
         return {
             success: true,
             version: resolvedVersion,
-            message: `Update to v${resolvedVersion} has been queued. The server will restart automatically.`,
-            jobId,
+            message: `Update to v${resolvedVersion} is starting now. The server will restart in a few seconds.`,
+            jobId: null,
         };
     },
 });
@@ -296,18 +331,20 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
             metadata: { version, skipBackup },
             context: extractAuditContext(ctx.request, ctx.user),
         });
-        const { queueUpdateJob } = await import('../utils/bullmq/update-worker');
-        const jobId = await queueUpdateJob({
+        const { executeUpdateNow } = await import('../utils/update-executor');
+        executeUpdateNow({
             version,
             userId: ctx.user.sub,
-            skipBackup,
+            skipBackup: skipBackup || false,
             isRollback: true,
+        }).catch((err) => {
+            console.error('[RollbackEndpoint] Rollback failed:', err);
         });
         return {
             success: true,
             version,
-            message: `Rollback to v${version} has been queued. The server will restart automatically.`,
-            jobId,
+            message: `Rollback to v${version} is starting now. The server will restart in a few seconds.`,
+            jobId: null,
         };
     },
 });
@@ -419,26 +456,9 @@ export const getUpdateStatusEndpoint = createAuthRoleFactory('admin').build({
             .nullable(),
     }),
     handler: async () => {
-        const { getActiveUpdateJob } = await import('../utils/bullmq/update-worker');
-        const activeJob = await getActiveUpdateJob();
-        if (!activeJob) {
-            return {
-                isUpdating: false,
-                currentJob: null,
-            };
-        }
-        const state = await activeJob.getState();
-        const progress = activeJob.progress;
         return {
-            isUpdating: state === 'active' || state === 'waiting',
-            currentJob: {
-                id: activeJob.id || '',
-                version: activeJob.data.version,
-                isRollback: activeJob.data.isRollback || false,
-                status: state,
-                progress: typeof progress === 'number' ? progress : null,
-                startedAt: activeJob.processedOn ? new Date(activeJob.processedOn).toISOString() : null,
-            },
+            isUpdating: false,
+            currentJob: null,
         };
     },
 });

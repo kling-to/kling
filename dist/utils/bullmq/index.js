@@ -19,7 +19,6 @@ export async function initializeBullMQ() {
     const { startBrowseAbandonmentWorker, scheduleBrowseAbandonmentJob, removeBrowseAbandonmentSchedule, } = await import('./browse-abandonment-worker');
     const { startPredictionWorker, schedulePredictionJob, removePredictionSchedule } = await import('./prediction-worker');
     const { startBackupWorker, scheduleBackupJob, removeBackupSchedule } = await import('./backup-worker');
-    const { startUpdateWorker } = await import('./update-worker');
     const { getRegisteredSchedules } = await import('./scheduler');
     const prisma = (await import('../prisma')).default;
     startAllWorkers();
@@ -68,8 +67,6 @@ export async function initializeBullMQ() {
         await removeBackupSchedule();
         console.log('[BullMQ] Database backup disabled');
     }
-    startUpdateWorker();
-    console.log('[BullMQ] System update worker enabled');
     const schedules = await getRegisteredSchedules();
     console.log(`[BullMQ] Initialized: ${schedules.length} campaign schedules active in Redis`);
 }
@@ -83,7 +80,6 @@ export async function shutdownBullMQ() {
     const { stopBrowseAbandonmentWorker } = await import('./browse-abandonment-worker');
     const { stopPredictionWorker } = await import('./prediction-worker');
     const { stopBackupWorker } = await import('./backup-worker');
-    const { stopUpdateWorker } = await import('./update-worker');
     console.log('[BullMQ] Shutting down...');
     await stopAllWorkers();
     await stopFlowWorkers();
@@ -93,7 +89,6 @@ export async function shutdownBullMQ() {
     await stopBrowseAbandonmentWorker();
     await stopPredictionWorker();
     await stopBackupWorker();
-    await stopUpdateWorker();
     await closeAllQueues();
     console.log('[BullMQ] Shutdown complete');
 }
