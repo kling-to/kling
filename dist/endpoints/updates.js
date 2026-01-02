@@ -6,7 +6,8 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import createHttpError from 'http-errors';
-const RELEASE_REPO_RAW = 'https://raw.githubusercontent.com/kling-to/kling/main';
+const GITHUB_REPO = 'kling-to/kling';
+const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}`;
 function getCurrentVersion() {
     try {
         const packagePath = path.join(process.cwd(), 'package.json');
@@ -44,6 +45,88 @@ function getGitInfo() {
     catch {
         return { sha: null, tag: null, isGitRepo: false };
     }
+}
+function isNewer(a, b) {
+    const partsA = a.replace(/^v/, '').split('.').map(Number);
+    const partsB = b.replace(/^v/, '').split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+        if ((partsA[i] || 0) > (partsB[i] || 0))
+            return true;
+        if ((partsA[i] || 0) < (partsB[i] || 0))
+            return false;
+    }
+    return false;
+}
+function isBreakingChange(currentTag, previousTag) {
+    if (!previousTag)
+        return false;
+    const current = currentTag.replace(/^v/, '').split('.').map(Number);
+    const previous = previousTag.replace(/^v/, '').split('.').map(Number);
+    return current[0] > previous[0];
+}
+function hasMigrations(body) {
+    const migrationKeywords = [
+        'migration',
+        'database migration',
+        'migrate',
+        'schema change',
+        'prisma migrate',
+        'breaking change to database',
+    ];
+    const lowerBody = body.toLowerCase();
+    return migrationKeywords.some((keyword) => lowerBody.includes(keyword));
+}
+async function getTagCommitSha(tag) {
+    try {
+        const response = await fetch(`${GITHUB_API}/git/ref/tags/${tag}`);
+        if (!response.ok)
+            return 'unknown';
+        const data = (await response.json());
+        return data.object.sha.substring(0, 8);
+    }
+    catch {
+        return 'unknown';
+    }
+}
+async function fetchGitHubReleases() {
+    const response = await fetch(`${GITHUB_API}/releases`, {
+        headers: {
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'Kling-Update-Service',
+        },
+    });
+    if (!response.ok) {
+        throw createHttpError(502, 'Failed to fetch releases from GitHub');
+    }
+    const releases = (await response.json());
+    const publishedReleases = releases.filter((r) => !r.draft && !r.prerelease);
+    if (publishedReleases.length === 0) {
+        throw createHttpError(404, 'No published releases found');
+    }
+    publishedReleases.sort((a, b) => (isNewer(a.tag_name, b.tag_name) ? -1 : 1));
+    const latest = publishedReleases[0].tag_name.replace(/^v/, '');
+    let currentMinVersion = '1.0.0';
+    const versions = await Promise.all(publishedReleases.map(async (release, index) => {
+        const version = release.tag_name.replace(/^v/, '');
+        const previousRelease = publishedReleases[index + 1] || null;
+        const breaking = isBreakingChange(release.tag_name, previousRelease?.tag_name || null);
+        const migrations = hasMigrations(release.body || '');
+        if (breaking) {
+            currentMinVersion = version;
+        }
+        const sha = await getTagCommitSha(release.tag_name);
+        return {
+            version,
+            tag: release.tag_name,
+            releaseDate: release.published_at,
+            changelog: release.body || 'No release notes available.',
+            breakingChanges: breaking,
+            migrations,
+            minVersion: currentMinVersion,
+            sha,
+        };
+    }));
+    return { latest, versions };
 }
 const versionInfoSchema = z.object({
     version: z.string(),
@@ -90,7 +173,7 @@ export const getCurrentVersionEndpoint = createAuthRoleFactory('admin').build({
 export const getAvailableVersionsEndpoint = createAuthRoleFactory('admin').build({
     method: 'get',
     shortDescription: 'Get Available Versions',
-    description: 'Returns all available versions from the release repository.',
+    description: 'Returns all available versions from GitHub Releases.',
     tag: 'Updates',
     input: z.object({}),
     output: z.object({
@@ -101,22 +184,7 @@ export const getAvailableVersionsEndpoint = createAuthRoleFactory('admin').build
     }),
     handler: async () => {
         const currentVersion = getCurrentVersion();
-        const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
-        if (!response.ok) {
-            throw createHttpError(502, 'Failed to fetch release information from repository');
-        }
-        const releasesData = (await response.json());
-        const isNewer = (a, b) => {
-            const partsA = a.split('.').map(Number);
-            const partsB = b.split('.').map(Number);
-            for (let i = 0; i < 3; i++) {
-                if ((partsA[i] || 0) > (partsB[i] || 0))
-                    return true;
-                if ((partsA[i] || 0) < (partsB[i] || 0))
-                    return false;
-            }
-            return false;
-        };
+        const releasesData = await fetchGitHubReleases();
         return {
             current: currentVersion,
             latest: releasesData.latest,
@@ -135,12 +203,8 @@ export const getVersionChangelogEndpoint = createAuthRoleFactory('admin').build(
     }),
     output: versionInfoSchema,
     handler: async ({ input }) => {
-        const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
-        if (!response.ok) {
-            throw createHttpError(502, 'Failed to fetch release information');
-        }
-        const releasesData = (await response.json());
-        const versionInfo = releasesData.versions.find((v) => v.version === input.version || v.tag === input.version);
+        const releasesData = await fetchGitHubReleases();
+        const versionInfo = releasesData.versions.find((v) => v.version === input.version || v.tag === input.version || v.tag === `v${input.version}`);
         if (!versionInfo) {
             throw createHttpError(404, `Version ${input.version} not found`);
         }
@@ -169,13 +233,11 @@ export const installUpdateEndpoint = createAuthRoleFactory('admin').build({
         if (!isGitRepo) {
             throw createHttpError(400, 'Not a git repository. Updates are only supported for git-based installations.');
         }
-        const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
-        if (!response.ok) {
-            throw createHttpError(502, 'Failed to fetch release information');
-        }
-        const releasesData = (await response.json());
+        const releasesData = await fetchGitHubReleases();
         const resolvedVersion = targetVersion === 'latest' ? releasesData.latest : targetVersion;
-        const versionExists = releasesData.versions.some((v) => v.version === resolvedVersion || v.tag === resolvedVersion);
+        const versionExists = releasesData.versions.some((v) => v.version === resolvedVersion ||
+            v.tag === resolvedVersion ||
+            v.tag === `v${resolvedVersion}`);
         if (!versionExists && targetVersion !== 'latest') {
             throw createHttpError(404, `Version ${targetVersion} not found`);
         }
@@ -222,12 +284,8 @@ export const rollbackVersionEndpoint = createAuthRoleFactory('admin').build({
         if (!isGitRepo) {
             throw createHttpError(400, 'Not a git repository. Rollbacks are only supported for git-based installations.');
         }
-        const response = await fetch(`${RELEASE_REPO_RAW}/releases.json`);
-        if (!response.ok) {
-            throw createHttpError(502, 'Failed to fetch release information');
-        }
-        const releasesData = (await response.json());
-        const versionExists = releasesData.versions.some((v) => v.version === version || v.tag === version);
+        const releasesData = await fetchGitHubReleases();
+        const versionExists = releasesData.versions.some((v) => v.version === version || v.tag === version || v.tag === `v${version}`);
         if (!versionExists) {
             throw createHttpError(404, `Version ${version} not found`);
         }
