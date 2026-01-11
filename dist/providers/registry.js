@@ -1,5 +1,6 @@
 import { MockEmailProvider, MockSmsProvider, MockWhatsAppProvider, MockRcsProvider, MockPushProvider, } from './mock';
 import { ResendEmailProvider } from './resend';
+import { SmtpEmailProvider } from './smtp';
 import { TwilioSmsProvider } from './twilio';
 import { TwilioWhatsAppProvider } from './whatsapp';
 import { TwilioRcsProvider } from './rcs';
@@ -44,28 +45,60 @@ export const providerRegistry = new ProviderRegistry();
 export async function initializeProviders() {
     providerRegistry.clear();
     const settings = await prisma.settings.findFirst();
-    const useMockEmail = settings?.useMockEmail ?? true;
     const useMockSms = settings?.useMockSms ?? true;
-    if (useMockEmail) {
-        providerRegistry.register(new MockEmailProvider({}), true);
-        console.log('[ProviderRegistry] Mock email provider initialized');
-    }
-    else {
-        const apiKey = settings?.resendApiKey;
-        if (apiKey) {
-            const resendConfig = {
-                apiKey,
-                fromAddress: settings?.resendFromAddress || 'noreply@example.com',
-                fromName: settings?.resendFromName || 'Kling',
-                webhookSecret: settings?.resendWebhookSecret || undefined,
-            };
-            providerRegistry.register(new ResendEmailProvider(resendConfig), true);
-            console.log('[ProviderRegistry] Resend email provider initialized');
+    const emailProvider = settings?.emailProvider ?? 'mock';
+    const effectiveEmailProvider = emailProvider === 'mock' && settings?.useMockEmail === false ? 'resend' : emailProvider;
+    switch (effectiveEmailProvider) {
+        case 'resend': {
+            const apiKey = settings?.resendApiKey;
+            if (apiKey) {
+                const resendConfig = {
+                    apiKey,
+                    fromAddress: settings?.resendFromAddress || 'noreply@example.com',
+                    fromName: settings?.resendFromName || 'Kling',
+                    webhookSecret: settings?.resendWebhookSecret || undefined,
+                };
+                providerRegistry.register(new ResendEmailProvider(resendConfig), true);
+                console.log('[ProviderRegistry] Resend email provider initialized');
+            }
+            else {
+                console.warn('[ProviderRegistry] Resend selected but no API key configured, falling back to mock');
+                providerRegistry.register(new MockEmailProvider({}), true);
+            }
+            break;
         }
-        else {
-            console.warn('[ProviderRegistry] No Resend API key configured, falling back to mock');
+        case 'smtp': {
+            const host = settings?.smtpHost;
+            if (host) {
+                const smtpConfig = {
+                    host,
+                    port: settings?.smtpPort || 587,
+                    secure: settings?.smtpSecure || false,
+                    username: settings?.smtpUsername || undefined,
+                    password: settings?.smtpPassword || undefined,
+                    fromAddress: settings?.smtpFromAddress || 'noreply@example.com',
+                    fromName: settings?.smtpFromName || 'Kling',
+                };
+                try {
+                    providerRegistry.register(new SmtpEmailProvider(smtpConfig), true);
+                    console.log('[ProviderRegistry] SMTP email provider initialized');
+                }
+                catch (error) {
+                    console.error('[ProviderRegistry] Failed to initialize SMTP:', error);
+                    providerRegistry.register(new MockEmailProvider({}), true);
+                }
+            }
+            else {
+                console.warn('[ProviderRegistry] SMTP selected but no host configured, falling back to mock');
+                providerRegistry.register(new MockEmailProvider({}), true);
+            }
+            break;
+        }
+        case 'mock':
+        default:
             providerRegistry.register(new MockEmailProvider({}), true);
-        }
+            console.log('[ProviderRegistry] Mock email provider initialized');
+            break;
     }
     if (useMockSms) {
         providerRegistry.register(new MockSmsProvider({}), true);

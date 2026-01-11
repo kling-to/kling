@@ -1,6 +1,6 @@
 # Kling - Self-Hosted Marketing Automation
 
-**Version 1.0.21** | [kling.to](https://kling.to)
+**Version 1.0.22** | [kling.to](https://kling.to)
 
 ## About
 
@@ -26,7 +26,7 @@ Open `http://your-server-ip:3001` and create your admin account.
 ```bash
 git clone https://github.com/kling-to/kling.git
 cd kling
-git checkout v1.0.21
+git checkout v1.0.22
 npm install --omit=dev
 cp .env.example .env
 # Edit .env with your settings
@@ -41,7 +41,7 @@ See [INSTALLATION.md](./INSTALLATION.md) for detailed setup instructions.
 
 ```bash
 git fetch --tags
-git checkout v1.0.21
+git checkout v1.0.22
 npm install --omit=dev
 npx prisma generate
 npx prisma migrate deploy

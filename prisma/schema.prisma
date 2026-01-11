@@ -389,12 +389,25 @@ model Settings {
   auditLogRetentionDays Int      @default(7)
 
   // Email Provider Settings
-  // When useMockEmail is true, mock provider is used regardless of credentials
+  // emailProvider: "mock" | "resend" | "smtp" - determines which provider to use
+  emailProvider         String   @default("mock")
+  // @deprecated - use emailProvider instead. Kept for backward compatibility
   useMockEmail          Boolean  @default(true)
+
+  // Resend Provider Settings
   resendApiKey          String?
   resendFromAddress     String?  // e.g., "noreply@yourdomain.com"
   resendFromName        String?  // e.g., "Kling"
   resendWebhookSecret   String?
+
+  // SMTP Provider Settings
+  smtpHost              String?  // e.g., "smtp.example.com"
+  smtpPort              Int?     @default(587)  // Common: 25, 465 (SSL), 587 (TLS)
+  smtpUsername          String?
+  smtpPassword          String?  // Encrypted
+  smtpSecure            Boolean  @default(false)  // true for port 465 (SSL)
+  smtpFromAddress       String?  // e.g., "noreply@yourdomain.com"
+  smtpFromName          String?  // e.g., "Kling"
 
   // SMS Provider Settings
   // When useMockSms is true, mock provider is used regardless of credentials

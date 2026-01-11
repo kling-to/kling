@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 export const SENSITIVE_FIELDS = [
     'resendApiKey',
     'resendWebhookSecret',
+    'smtpPassword',
     'twilioAuthToken',
     'openaiApiKey',
     'fcmPrivateKey',

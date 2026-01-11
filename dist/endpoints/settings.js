@@ -58,11 +58,19 @@ export const getSettingsEndpoint = authFactory.build({
         signupMode: signupModeSchema,
         allowedSignupDomains: z.array(z.string()),
         auditLogRetentionDays: z.number(),
+        emailProvider: z.enum(['mock', 'resend', 'smtp']),
         useMockEmail: z.boolean(),
         resendApiKey: z.string().nullable(),
         resendFromAddress: z.string().nullable(),
         resendFromName: z.string().nullable(),
         resendWebhookSecret: z.string().nullable(),
+        smtpHost: z.string().nullable(),
+        smtpPort: z.number().nullable(),
+        smtpUsername: z.string().nullable(),
+        smtpPassword: z.string().nullable(),
+        smtpSecure: z.boolean(),
+        smtpFromAddress: z.string().nullable(),
+        smtpFromName: z.string().nullable(),
         useMockSms: z.boolean(),
         twilioAccountSid: z.string().nullable(),
         twilioAuthToken: z.string().nullable(),
@@ -121,6 +129,7 @@ export const getSettingsEndpoint = authFactory.build({
             signupMode: settings.signupMode,
             allowedSignupDomains: settings.allowedSignupDomains,
             auditLogRetentionDays: settings.auditLogRetentionDays,
+            emailProvider: settings.emailProvider,
             useMockEmail: settings.useMockEmail,
             resendApiKey: settings.resendApiKey ? maskSecret(settings.resendApiKey) : null,
             resendFromAddress: settings.resendFromAddress,
@@ -128,6 +137,13 @@ export const getSettingsEndpoint = authFactory.build({
             resendWebhookSecret: settings.resendWebhookSecret
                 ? maskSecret(settings.resendWebhookSecret)
                 : null,
+            smtpHost: settings.smtpHost,
+            smtpPort: settings.smtpPort,
+            smtpUsername: settings.smtpUsername,
+            smtpPassword: settings.smtpPassword ? maskSecret(settings.smtpPassword) : null,
+            smtpSecure: settings.smtpSecure,
+            smtpFromAddress: settings.smtpFromAddress,
+            smtpFromName: settings.smtpFromName,
             useMockSms: settings.useMockSms,
             twilioAccountSid: settings.twilioAccountSid,
             twilioAuthToken: settings.twilioAuthToken ? maskSecret(settings.twilioAuthToken) : null,
@@ -202,11 +218,19 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
         signupMode: signupModeSchema.optional(),
         allowedSignupDomains: z.array(z.string().min(1)).optional(),
         auditLogRetentionDays: z.number().int().min(1).optional(),
+        emailProvider: z.enum(['mock', 'resend', 'smtp']).optional(),
         useMockEmail: z.boolean().optional(),
         resendApiKey: z.string().nullable().optional(),
         resendFromAddress: z.string().email().nullable().optional(),
         resendFromName: z.string().nullable().optional(),
         resendWebhookSecret: z.string().nullable().optional(),
+        smtpHost: z.string().nullable().optional(),
+        smtpPort: z.number().int().min(1).max(65535).nullable().optional(),
+        smtpUsername: z.string().nullable().optional(),
+        smtpPassword: z.string().nullable().optional(),
+        smtpSecure: z.boolean().optional(),
+        smtpFromAddress: z.string().email().nullable().optional(),
+        smtpFromName: z.string().nullable().optional(),
         useMockSms: z.boolean().optional(),
         twilioAccountSid: z.string().nullable().optional(),
         twilioAuthToken: z.string().nullable().optional(),
@@ -272,11 +296,19 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
         signupMode: signupModeSchema,
         allowedSignupDomains: z.array(z.string()),
         auditLogRetentionDays: z.number(),
+        emailProvider: z.enum(['mock', 'resend', 'smtp']),
         useMockEmail: z.boolean(),
         resendApiKey: z.string().nullable(),
         resendFromAddress: z.string().nullable(),
         resendFromName: z.string().nullable(),
         resendWebhookSecret: z.string().nullable(),
+        smtpHost: z.string().nullable(),
+        smtpPort: z.number().nullable(),
+        smtpUsername: z.string().nullable(),
+        smtpPassword: z.string().nullable(),
+        smtpSecure: z.boolean(),
+        smtpFromAddress: z.string().nullable(),
+        smtpFromName: z.string().nullable(),
         useMockSms: z.boolean(),
         twilioAccountSid: z.string().nullable(),
         twilioAuthToken: z.string().nullable(),
@@ -366,6 +398,7 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
                 ...(input.auditLogRetentionDays !== undefined && {
                     auditLogRetentionDays: input.auditLogRetentionDays,
                 }),
+                ...(input.emailProvider !== undefined && { emailProvider: input.emailProvider }),
                 ...(input.useMockEmail !== undefined && { useMockEmail: input.useMockEmail }),
                 ...(input.resendApiKey !== undefined && {
                     resendApiKey: encryptIfNeeded(input.resendApiKey),
@@ -377,6 +410,15 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
                 ...(input.resendWebhookSecret !== undefined && {
                     resendWebhookSecret: encryptIfNeeded(input.resendWebhookSecret),
                 }),
+                ...(input.smtpHost !== undefined && { smtpHost: input.smtpHost }),
+                ...(input.smtpPort !== undefined && { smtpPort: input.smtpPort }),
+                ...(input.smtpUsername !== undefined && { smtpUsername: input.smtpUsername }),
+                ...(input.smtpPassword !== undefined && {
+                    smtpPassword: encryptIfNeeded(input.smtpPassword),
+                }),
+                ...(input.smtpSecure !== undefined && { smtpSecure: input.smtpSecure }),
+                ...(input.smtpFromAddress !== undefined && { smtpFromAddress: input.smtpFromAddress }),
+                ...(input.smtpFromName !== undefined && { smtpFromName: input.smtpFromName }),
                 ...(input.useMockSms !== undefined && { useMockSms: input.useMockSms }),
                 ...(input.twilioAccountSid !== undefined && { twilioAccountSid: input.twilioAccountSid }),
                 ...(input.twilioAuthToken !== undefined && {
@@ -492,6 +534,8 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
             changedFields.push('allowedSignupDomains');
         if (input.auditLogRetentionDays !== undefined)
             changedFields.push('auditLogRetentionDays');
+        if (input.emailProvider !== undefined)
+            changedFields.push('emailProvider');
         if (input.useMockEmail !== undefined)
             changedFields.push('useMockEmail');
         if (input.resendApiKey !== undefined)
@@ -502,6 +546,20 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
             changedFields.push('resendFromName');
         if (input.resendWebhookSecret !== undefined)
             changedFields.push('resendWebhookSecret');
+        if (input.smtpHost !== undefined)
+            changedFields.push('smtpHost');
+        if (input.smtpPort !== undefined)
+            changedFields.push('smtpPort');
+        if (input.smtpUsername !== undefined)
+            changedFields.push('smtpUsername');
+        if (input.smtpPassword !== undefined)
+            changedFields.push('smtpPassword');
+        if (input.smtpSecure !== undefined)
+            changedFields.push('smtpSecure');
+        if (input.smtpFromAddress !== undefined)
+            changedFields.push('smtpFromAddress');
+        if (input.smtpFromName !== undefined)
+            changedFields.push('smtpFromName');
         if (input.useMockSms !== undefined)
             changedFields.push('useMockSms');
         if (input.twilioAccountSid !== undefined)
@@ -586,11 +644,19 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
             context: { userId: ctx.user.sub },
         });
         const providerFields = [
+            'emailProvider',
             'useMockEmail',
             'resendApiKey',
             'resendFromAddress',
             'resendFromName',
             'resendWebhookSecret',
+            'smtpHost',
+            'smtpPort',
+            'smtpUsername',
+            'smtpPassword',
+            'smtpSecure',
+            'smtpFromAddress',
+            'smtpFromName',
             'useMockSms',
             'twilioAccountSid',
             'twilioAuthToken',
@@ -687,6 +753,7 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
             signupMode: settings.signupMode,
             allowedSignupDomains: settings.allowedSignupDomains,
             auditLogRetentionDays: settings.auditLogRetentionDays,
+            emailProvider: settings.emailProvider,
             useMockEmail: settings.useMockEmail,
             resendApiKey: settings.resendApiKey ? maskSecret(settings.resendApiKey) : null,
             resendFromAddress: settings.resendFromAddress,
@@ -694,6 +761,13 @@ export const updateSettingsEndpoint = createAuthRoleFactory('admin').build({
             resendWebhookSecret: settings.resendWebhookSecret
                 ? maskSecret(settings.resendWebhookSecret)
                 : null,
+            smtpHost: settings.smtpHost,
+            smtpPort: settings.smtpPort,
+            smtpUsername: settings.smtpUsername,
+            smtpPassword: settings.smtpPassword ? maskSecret(settings.smtpPassword) : null,
+            smtpSecure: settings.smtpSecure,
+            smtpFromAddress: settings.smtpFromAddress,
+            smtpFromName: settings.smtpFromName,
             useMockSms: settings.useMockSms,
             twilioAccountSid: settings.twilioAccountSid,
             twilioAuthToken: settings.twilioAuthToken ? maskSecret(settings.twilioAuthToken) : null,
