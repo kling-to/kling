@@ -51,14 +51,14 @@ function createRateLimiter(options) {
 }
 export const globalLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     prefix: 'global',
     useDefaultKeyGenerator: true,
     message: 'Too many requests from this IP, please try again later',
 });
 export const authLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 20,
     prefix: 'auth',
     skipSuccessfulRequests: true,
     useDefaultKeyGenerator: true,
@@ -66,21 +66,21 @@ export const authLimiter = createRateLimiter({
 });
 export const campaignLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000,
-    max: 20,
+    max: 100,
     prefix: 'campaigns',
     keyGenerator: (req) => {
         return req.user?.sub || 'anonymous';
     },
-    message: 'Campaign creation rate limit exceeded (20 per hour)',
+    message: 'Campaign creation rate limit exceeded (100 per hour)',
 });
 export const nlParsingLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000,
-    max: 10,
+    max: 50,
     prefix: 'nl-parsing',
     keyGenerator: (req) => {
         return req.user?.sub || 'anonymous';
     },
-    message: 'Natural language parsing rate limit exceeded (10 per hour)',
+    message: 'Natural language parsing rate limit exceeded (50 per hour)',
 });
 export const eventIngestionLimiter = createRateLimiter({
     windowMs: 60 * 1000,
@@ -93,17 +93,17 @@ export const eventIngestionLimiter = createRateLimiter({
 });
 export const webhookLimiter = createRateLimiter({
     windowMs: 60 * 1000,
-    max: 100,
+    max: 500,
     prefix: 'webhook',
     useDefaultKeyGenerator: true,
-    message: 'Webhook rate limit exceeded (100 per minute)',
+    message: 'Webhook rate limit exceeded (500 per minute)',
 });
 export const adminLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000,
-    max: 30,
+    max: 200,
     prefix: 'admin',
     keyGenerator: (req) => {
         return req.user?.sub || 'anonymous';
     },
-    message: 'Admin operation rate limit exceeded (30 per hour)',
+    message: 'Admin operation rate limit exceeded (200 per hour)',
 });

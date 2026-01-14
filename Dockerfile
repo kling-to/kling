@@ -97,10 +97,6 @@ until redis-cli -h 127.0.0.1 ping > /dev/null 2>&1; do
 done
 echo "Redis is ready"
 
-# Run migrations (safe to run multiple times)
-echo "Running database migrations..."
-npx prisma migrate deploy || true
-
 # Start the Node.js application
 exec node --import tsx /app/dist/index.js
 EOF

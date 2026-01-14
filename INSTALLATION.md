@@ -21,9 +21,9 @@ Before starting, make sure you have:
 
 ---
 
-## Option A: Docker (Recommended)
+## Option A: Docker Compose (Recommended)
 
-The simplest way to run Kling. Everything runs in a single container.
+The simplest way to run Kling. Uses separate containers for the app, database, and cache.
 
 ### Step 1: Install Docker
 
@@ -34,22 +34,40 @@ sudo usermod -aG docker $USER
 
 Log out and back in for the group change to take effect.
 
-### Step 2: Run Kling
+### Step 2: Create Project Directory
 
 ```bash
-docker run -d \
-  --name kling \
-  -p 3001:3001 \
-  -v kling-data:/data \
-  -e JWT_SECRET="$(openssl rand -base64 32)" \
-  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
-  --restart unless-stopped \
-  ghcr.io/kling-to/kling:latest
+mkdir -p ~/kling && cd ~/kling
+```
+
+### Step 3: Download Docker Compose File
+
+```bash
+curl -O https://raw.githubusercontent.com/kling-to/kling/main/docker-compose.production.yml
+```
+
+### Step 4: Create Environment File
+
+```bash
+cat > .env << EOF
+JWT_SECRET=$(openssl rand -base64 32)
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+EOF
+```
+
+### Step 5: Start Kling
+
+```bash
+docker compose -f docker-compose.production.yml up -d
 ```
 
 That's it! Kling is now running at `http://your-server-ip:3001`.
 
-### Step 3: Set Up a Reverse Proxy (Optional)
+### Step 6: Create Admin Account
+
+Open `http://your-server-ip:3001` in your browser and register. The first user automatically becomes the administrator.
+
+### Step 7: Set Up a Reverse Proxy (Optional)
 
 For HTTPS and a custom domain, install Nginx and Certbot:
 
@@ -122,7 +140,30 @@ sudo apt install -y redis-server
 sudo systemctl enable --now mongod redis-server
 ```
 
-### Step 3: Download Kling
+### Step 3: Configure MongoDB as Replica Set
+
+MongoDB must run as a replica set for Prisma transactions:
+
+```bash
+# Edit MongoDB config
+sudo nano /etc/mongod.conf
+```
+
+Add or modify the replication section:
+
+```yaml
+replication:
+  replSetName: rs0
+```
+
+Restart MongoDB and initialize the replica set:
+
+```bash
+sudo systemctl restart mongod
+mongosh --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})"
+```
+
+### Step 4: Download Kling
 
 ```bash
 cd /opt
@@ -138,14 +179,14 @@ git fetch --tags
 git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
 ```
 
-### Step 4: Install Dependencies
+### Step 5: Install Dependencies
 
 ```bash
 npm install --omit=dev
 npx prisma generate
 ```
 
-### Step 5: Configure Environment
+### Step 6: Configure Environment
 
 ```bash
 cp .env.example .env
@@ -160,12 +201,12 @@ nano .env
 Required variables:
 
 ```bash
-# Database (local MongoDB)
-DATABASE_URL="mongodb://127.0.0.1:27017/kling"
+# Database (MongoDB replica set)
+DATABASE_URL="mongodb://127.0.0.1:27017/kling?replicaSet=rs0"
 
 # Security - generate these!
-JWT_SECRET="$(openssl rand -base64 32)"
-ENCRYPTION_KEY="$(openssl rand -hex 32)"
+JWT_SECRET="your-generated-secret"
+ENCRYPTION_KEY="your-generated-key"
 
 # Server
 PORT=3001
@@ -180,12 +221,6 @@ Generate secure values:
 ```bash
 echo "JWT_SECRET: $(openssl rand -base64 32)"
 echo "ENCRYPTION_KEY: $(openssl rand -hex 32)"
-```
-
-### Step 6: Run Database Migrations
-
-```bash
-npx prisma migrate deploy
 ```
 
 ### Step 7: Create Systemd Service
@@ -289,19 +324,12 @@ sudo ufw --force enable
 
 ## Updating Kling
 
-### Docker
+### Docker Compose
 
 ```bash
-docker pull ghcr.io/kling-to/kling:latest
-docker stop kling && docker rm kling
-docker run -d \
-  --name kling \
-  -p 3001:3001 \
-  -v kling-data:/data \
-  -e JWT_SECRET="your-existing-secret" \
-  -e ENCRYPTION_KEY="your-existing-key" \
-  --restart unless-stopped \
-  ghcr.io/kling-to/kling:latest
+cd ~/kling
+docker compose -f docker-compose.production.yml pull
+docker compose -f docker-compose.production.yml up -d
 ```
 
 ### Manual Installation
@@ -312,7 +340,6 @@ git fetch --tags
 git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
 npm install --omit=dev
 npx prisma generate
-npx prisma migrate deploy
 sudo systemctl restart kling
 ```
 
@@ -320,12 +347,17 @@ sudo systemctl restart kling
 
 ## Backing Up Your Data
 
-### Docker
+### Docker Compose
 
 ```bash
-# Backup data volume
-docker run --rm -v kling-data:/data -v $(pwd):/backup alpine \
-  tar czf /backup/kling-backup-$(date +%Y%m%d).tar.gz /data
+cd ~/kling
+
+# Backup MongoDB
+docker compose -f docker-compose.production.yml exec mongodb \
+  mongodump --archive --gzip > backup-$(date +%Y%m%d).gz
+
+# Backup .env file
+cp .env .env.backup-$(date +%Y%m%d)
 ```
 
 ### Manual Installation
@@ -347,7 +379,7 @@ tar czf /backup/kling-files-$(date +%Y%m%d).tar.gz /opt/kling/.env /opt/kling/up
 Check logs:
 
 ```bash
-docker logs kling
+docker compose -f docker-compose.production.yml logs kling
 ```
 
 ### "Connection refused" errors
@@ -356,7 +388,7 @@ Ensure services are running:
 
 ```bash
 # Docker
-docker ps
+docker compose -f docker-compose.production.yml ps
 
 # Manual
 sudo systemctl status mongod redis-server kling
@@ -364,10 +396,14 @@ sudo systemctl status mongod redis-server kling
 
 ### Database connection issues
 
-Verify MongoDB is accessible:
+Verify MongoDB replica set is initialized:
 
 ```bash
-mongosh --eval "db.adminCommand('ping')"
+# Docker
+docker compose -f docker-compose.production.yml exec mongodb mongosh --eval "rs.status()"
+
+# Manual
+mongosh --eval "rs.status()"
 ```
 
 ### Port already in use
@@ -382,13 +418,13 @@ sudo lsof -i :3001
 
 ## Quick Reference
 
-| Action | Docker | Manual |
-|--------|--------|--------|
-| Start | `docker start kling` | `sudo systemctl start kling` |
-| Stop | `docker stop kling` | `sudo systemctl stop kling` |
-| Restart | `docker restart kling` | `sudo systemctl restart kling` |
-| View logs | `docker logs -f kling` | `sudo journalctl -u kling -f` |
-| Check status | `docker ps` | `sudo systemctl status kling` |
+| Action | Docker Compose | Manual |
+|--------|----------------|--------|
+| Start | `docker compose -f docker-compose.production.yml up -d` | `sudo systemctl start kling` |
+| Stop | `docker compose -f docker-compose.production.yml down` | `sudo systemctl stop kling` |
+| Restart | `docker compose -f docker-compose.production.yml restart` | `sudo systemctl restart kling` |
+| View logs | `docker compose -f docker-compose.production.yml logs -f kling` | `sudo journalctl -u kling -f` |
+| Check status | `docker compose -f docker-compose.production.yml ps` | `sudo systemctl status kling` |
 
 ---
 

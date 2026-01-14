@@ -24,10 +24,6 @@ npm install --omit=dev
 echo "Generating Prisma client..."
 npx prisma generate
 
-# Run migrations
-echo "Running database migrations..."
-npx prisma migrate deploy
-
 echo ""
 echo "Update complete!"
 echo "Restart with: sudo systemctl restart kling"
