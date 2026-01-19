@@ -1,6 +1,6 @@
 # Kling - Self-Hosted Marketing Automation
 
-**Version 1.0.23** | [kling.to](https://kling.to)
+**Version 1.0.24** | [kling.to](https://kling.to)
 
 ## About
 
@@ -23,7 +23,7 @@ docker compose -f docker-compose.production.yml up -d
 
 ```bash
 git fetch --tags
-git checkout v1.0.23
+git checkout v1.0.24
 npm install --omit=dev
 npx prisma generate
 ```
