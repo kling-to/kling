@@ -1,0 +1,83 @@
+# Kling - Production Docker Compose
+#
+# Quick Start:
+#   1. Create a .env file with your secrets:
+#      JWT_SECRET=$(openssl rand -base64 32)
+#      ENCRYPTION_KEY=$(openssl rand -hex 32)
+#
+#   2. Start all services:
+#      docker compose -f docker-compose.production.yml up -d
+#
+#   3. Open http://localhost:3001 and create your admin account
+#
+# Data is persisted in Docker volumes.
+
+services:
+  # MongoDB database (replica set required for Prisma transactions)
+  mongodb:
+    image: mongo:7
+    container_name: kling-mongodb
+    hostname: mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+        try {
+          rs.status().ok
+        } catch(e) {
+          rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}).ok
+        }"
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Redis for job queues
+  redis:
+    image: redis:7-alpine
+    container_name: kling-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kling application
+  kling:
+    image: ghcr.io/kling-to/kling:latest
+    container_name: kling
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: mongodb://mongodb:27017/kling?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Optional: Add your provider API keys
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # RESEND_API_KEY: ${RESEND_API_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  mongodb_data:
+  redis_data:
